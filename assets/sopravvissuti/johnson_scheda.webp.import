@@ -15,9 +15,9 @@ dest_files=["res://.godot/imported/johnson_scheda.webp-c6929d58a96dd9556fd80042a
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
-compress/lossy_quality=0.7
+compress/lossy_quality=0.82
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1

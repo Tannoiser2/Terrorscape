@@ -62,6 +62,7 @@ var codice := ""
 var mio_posto := -1
 var nome_giocatore := "Giocatore"
 var _online_attesa := false
+var _richiesta_mostrata := -1   # online: numero della decisione che tocca a me e che ho mostrato
 
 # ================================================================ avvio
 
@@ -84,6 +85,11 @@ func _ready() -> void:
 	add_child(rete)
 	_carica_preferenze()
 	_menu()
+
+## Tracce per il collaudo (variabile d'ambiente TS_DEBUG).
+func _dbg(t: String) -> void:
+	if OS.get_environment("TS_DEBUG") != "":
+		print(t)
 
 func _tex(path: String) -> Texture2D:
 	if path == "" or not ResourceLoader.exists(path):
@@ -508,7 +514,7 @@ func _avvia_partita() -> void:
 		ia_k = IA.new(partita, "K", config["seme"] + 11)
 	if modo in ["giocatore_k", "osserva"]:
 		ia_s = IA.new(partita, "S", config["seme"] + 23)
-	plancia.imposta(partita, mio_lato)
+	plancia.imposta(partita, "tutti" if modo == "osserva" else mio_lato)
 	plancia.vista_inclinata()
 	_costruisci_hud()
 	_aggiorna_hud()
@@ -520,6 +526,7 @@ func _ia_per(lato: String) -> IA:
 	return ia_k if lato == "K" else ia_s
 
 func _su_richiesta(lato: String, req: Dictionary) -> void:
+	_dbg("richiesta %d %s %s" % [partita.decisioni, lato, req.get("tipo", "")])
 	req_attuale = req
 	lato_attuale = lato
 	sel_azione = ""
@@ -550,6 +557,10 @@ func _decidi(d: Dictionary) -> void:
 		return
 	if modo == "online":
 		var n := partita.decisioni
+		if _richiesta_mostrata != n:
+			return
+		_richiesta_mostrata = -1
+		_dbg("  decido %d %s" % [n, str(d)])
 		_avviso("Invio della mossa…")
 		var ok := false
 		for tentativo in 6:
@@ -559,9 +570,14 @@ func _decidi(d: Dictionary) -> void:
 			await get_tree().create_timer(1.5).timeout
 		if not ok:
 			_avviso("Rete non raggiungibile: riprova. (%s)" % rete.last_error)
+			_richiesta_mostrata = n
 			_mostra_richiesta()
 			return
 		_avviso("")
+		await get_tree().process_frame
+		_dbg("  inviato %d" % n)
+		if partita == null or partita.decisioni != n:
+			return
 	partita.rispondi(d)
 
 func _su_evento(e: Dictionary) -> void:
@@ -725,6 +741,7 @@ func _costruisci_hud() -> void:
 	richiesta_corpo.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	richiesta_corpo.add_theme_constant_override("h_separation", 8)
 	richiesta_corpo.add_theme_constant_override("v_separation", 6)
+	richiesta_corpo.add_child(_spaziatore())
 	rs.add_child(richiesta_corpo)
 	# ingrandimento carte
 	zoom = _pannello(Color(0.03, 0.015, 0.02, 0.96), 10)
@@ -951,6 +968,7 @@ func _pannello_sopr() -> void:
 		# oggetti
 		if not sp["oggetti"].is_empty():
 			var ho := HFlowContainer.new()
+			ho.add_child(_spaziatore())
 			ho.add_theme_constant_override("h_separation", 4)
 			v.add_child(ho)
 			for o in sp["oggetti"]:
@@ -958,6 +976,7 @@ func _pannello_sopr() -> void:
 		# azioni
 		if turno_mio and sp["vivo"]:
 			var az := HFlowContainer.new()
+			az.add_child(_spaziatore())
 			az.add_theme_constant_override("h_separation", 5)
 			az.add_theme_constant_override("v_separation", 5)
 			v.add_child(az)
@@ -996,6 +1015,7 @@ func _pannello_killer_pubblico() -> void:
 	v.add_child(lv)
 	if modo == "osserva":
 		var hm := HFlowContainer.new()
+		hm.add_child(_spaziatore())
 		pannello.add_child(hm)
 		for c in k["mano"]:
 			var tr := _immagine(Dati.img_carta(k["id"], c), 62, 86)
@@ -1023,6 +1043,7 @@ func _pannello_killer() -> void:
 	v.add_child(rt)
 	v.add_child(_etichetta("La tua mano", 19, ORO, F_SC))
 	var hm := HFlowContainer.new()
+	hm.add_child(_spaziatore())
 	hm.add_theme_constant_override("h_separation", 6)
 	hm.add_theme_constant_override("v_separation", 6)
 	v.add_child(hm)
@@ -1056,7 +1077,7 @@ func _pannello_killer() -> void:
 			hm.add_child(b)
 		_zoomabile(b, path, _testo_carta_k(c))
 	if k["mano"].is_empty():
-		v.add_child(_etichetta("(nessuna carta)", 16))
+		v.add_child(_riga("(nessuna carta)", 16))
 
 func _livelli_testo(k: Dictionary) -> String:
 	var kd: Dictionary = Dati.KILLER[k["id"]]
@@ -1153,8 +1174,7 @@ func _bottoni_azioni(i: int, box: Control) -> void:
 
 func _scegli_scambio(i: int, compagni: Array) -> void:
 	var sp: Dictionary = partita.s["sopr"][i]
-	for c in richiesta_corpo.get_children():
-		c.queue_free()
+	_svuota_corpo()
 	richiesta_titolo.text = "%s: cosa dai, e a chi?" % partita.nome_s(i)
 	for k in sp["oggetti"].size():
 		var o: String = sp["oggetti"][k]
@@ -1175,8 +1195,7 @@ func _scegli_movimento(i: int, azione: String, n: int) -> void:
 	_bottoni_annulla()
 
 func _bottoni_annulla() -> void:
-	for c in richiesta_corpo.get_children():
-		c.queue_free()
+	_svuota_corpo()
 	var b := _bottone_piccolo("Annulla")
 	b.pressed.connect(func(): plancia.pulisci_scelta(); sel_azione = ""; _mostra_richiesta())
 	richiesta_corpo.add_child(b)
@@ -1231,8 +1250,7 @@ func _usa_oggetto(i: int, k: int) -> void:
 			if cand.size() <= 1:
 				_decidi({"a": "usa", "i": i, "ogg": k, "bersaglio": cand[0] if not cand.is_empty() else i})
 			else:
-				for c in richiesta_corpo.get_children():
-					c.queue_free()
+				_svuota_corpo()
 				richiesta_titolo.text = "%s: su chi?" % Dati.OGGETTI[o]["nome"]
 				for j in cand:
 					var b := _bottone_piccolo(partita.nome_s(j))
@@ -1257,11 +1275,26 @@ func _usa_oggetto(i: int, k: int) -> void:
 
 # ================================================================ richieste: interfaccia
 
+## Un segnaposto minuscolo: evita i contenitori a flusso vuoti (vedi _svuota_corpo).
+func _spaziatore() -> Control:
+	var c := Control.new()
+	c.custom_minimum_size = Vector2(1, 1)
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return c
+
+## Svuota la fila dei bottoni delle richieste lasciandoci un segnaposto:
+## un contenitore a flusso vuoto dentro un'area scorrevole manda in loop l'impaginazione.
+func _svuota_corpo() -> void:
+	for c in richiesta_corpo.get_children():
+		c.queue_free()
+	var spazio := Control.new()
+	spazio.custom_minimum_size = Vector2(1, 34)
+	richiesta_corpo.add_child(spazio)
+
 func _mostra_attesa(lato: String) -> void:
 	if richiesta_titolo == null:
 		return
-	for c in richiesta_corpo.get_children():
-		c.queue_free()
+	_svuota_corpo()
 	if modo == "osserva":
 		richiesta_titolo.text = ("Il Killer pensa…" if lato == "K" else "I Sopravvissuti pensano…")
 	elif lato == "K":
@@ -1270,11 +1303,11 @@ func _mostra_attesa(lato: String) -> void:
 		richiesta_titolo.text = "I Sopravvissuti stanno decidendo…"
 
 func _mostra_richiesta() -> void:
+	_dbg("  mostra %s" % req_attuale.get("tipo", ""))
 	if richiesta_titolo == null or partita == null:
 		return
 	var req := req_attuale
-	for c in richiesta_corpo.get_children():
-		c.queue_free()
+	_svuota_corpo()
 	plancia.pulisci_scelta()
 	richiesta_titolo.text = req.get("titolo", "")
 	var s: Dictionary = partita.s
@@ -1396,6 +1429,7 @@ func _mostra_richiesta() -> void:
 		"muovi_k":
 			plancia.mostra_scelta(req["vicini"], [], Color(1, 0.3, 0.25) if not req.get("furtivo", false) else Color(0.7, 0.4, 1))
 			sel_azione = "muovi_k"
+			richiesta_corpo.add_child(_riga("Clicca un luogo evidenziato sulla plancia.", 17))
 			if not req.get("obbligo", false):
 				var b := _bottone("Fermati qui", SANGUE, 19)
 				b.pressed.connect(func(): _decidi({"dest": ""}))
@@ -1647,7 +1681,10 @@ func _online_richiesta(lato: String, req: Dictionary) -> void:
 	var n := partita.decisioni
 	var primo := true
 	while partita != null and partita.decisioni == n and not partita.attesa.is_empty():
+		_dbg("  online %d %s" % [n, lato])
 		var d = await rete.get_decision(codice, n)
+		await get_tree().process_frame
+		_dbg("  online ricevuto %d %s" % [n, str(d)])
 		if partita == null or partita.decisioni != n:
 			return
 		if d is Dictionary and not d.is_empty():
@@ -1655,8 +1692,8 @@ func _online_richiesta(lato: String, req: Dictionary) -> void:
 			partita.rispondi(d)
 			return
 		if d == null and lato == mio_lato:
-			if primo:
-				_mostra_richiesta()
+			_richiesta_mostrata = n
+			_mostra_richiesta()
 			return
 		if d == null:
 			if primo:

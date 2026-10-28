@@ -102,6 +102,7 @@ func imposta(partita: Partita, quale_lato: String) -> void:
 	lato = quale_lato
 	var m: Dictionary = p.mappa
 	var path: String = m["tabellone_k"] if lato == "K" else m["tabellone_s"]
+	# "tutti": chi guarda la partita vede anche il Killer furtivo
 	_mat_tab.albedo_texture = _tex(path)
 	for k in sagome:
 		sagome[k].queue_free()
@@ -265,9 +266,6 @@ func mostra_scelta(luoghi: Array, porte := [], colore := Color(1.0, 0.85, 0.3)) 
 		m.material_override = mat
 		m.position = pos_luogo(l) + Vector3(0, 0.05, 0)
 		evidenze.add_child(m)
-		var tw := m.create_tween().set_loops()
-		tw.tween_property(m, "scale", Vector3(1.15, 1, 1.15), 0.5)
-		tw.tween_property(m, "scale", Vector3(1, 1, 1), 0.5)
 	for pt in porte:
 		var ab: PackedStringArray = pt.split("|")
 		var xy: Array = p.porta(ab[0], ab[1])["xy"]
@@ -284,6 +282,15 @@ func mostra_scelta(luoghi: Array, porte := [], colore := Color(1.0, 0.85, 0.3)) 
 		m.material_override = mat
 		m.position = xy3d(xy, 0.35)
 		evidenze.add_child(m)
+
+## Gli anelli delle scelte pulsano piano.
+func _process(_d: float) -> void:
+	if evidenze == null or evidenze.get_child_count() == 0:
+		return
+	var f := 1.0 + 0.08 * sin(Time.get_ticks_msec() * 0.006)
+	for c in evidenze.get_children():
+		if c is MeshInstance3D and c.mesh is TorusMesh:
+			c.scale = Vector3(f, 1, f)
 
 func pulisci_scelta() -> void:
 	_scelta_luoghi.clear()

@@ -15,9 +15,9 @@ dest_files=["res://.godot/imported/avvio.png-1f332e5a32bb21f5339b428d0eb7ee4a.ct
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
-compress/lossy_quality=0.7
+compress/lossy_quality=0.82
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1

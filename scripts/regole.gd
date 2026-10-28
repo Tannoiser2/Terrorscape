@@ -1476,6 +1476,6 @@ func _effetto(id: String) -> void:
 
 ## Che cosa vede un lato: i Sopravvissuti vedono tutto tranne il Killer furtivo e la sua mano.
 func posizione_killer_per(lato: String) -> String:
-	if lato == "K":
+	if lato == "K" or lato == "tutti":
 		return s["killer"]["pos"]
 	return "" if s["killer"]["furtivo"] else s["killer"]["pos"]
