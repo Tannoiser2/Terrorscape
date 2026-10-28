@@ -422,7 +422,7 @@ func _scegli_luogo_k(req: Dictionary, h: Dictionary, _obj: String) -> String:
 		var ld: Dictionary = p.mappa["luoghi"][l]
 		match scopo:
 			"trappola":
-				v = -p.distanza(l, p.mappa["partenza_s"]) * 0.6 + (2.0 if ld.get("chiave", false) or ld.get("radio", false) else 0.0) + h.get(l, 0.0) * 3.0
+				v = -p.distanza(l, p.mappa["partenza_s"]) * 0.6 + (1.0 if ld.get("chiave", false) or ld.get("radio", false) else 0.0) + h.get(l, 0.0) * 3.0 + rng.randf() * 1.5
 				if p.distanza(l, p.mappa["partenza_s"]) == 0:
 					v -= 5.0
 			"statua":
@@ -629,20 +629,23 @@ func pericolo(l: String) -> float:
 				extra -= 0.5
 	extra += 0.2 * p.zombi_in(l)
 	if p.s["trappole_k"].has(l):
-		extra += 0.6
+		extra += 0.05
 	var base := 0.05
 	match d:
 		0: base = 1.0
 		1: base = 0.75
 		2: base = 0.4
 		3: base = 0.15
+	if p.s["killer"]["id"] == "statue":
+		# quattro statue, ma solo 2 azioni per turno: il pericolo di ognuna è minore
+		base *= 0.65
 	return maxf(0.0, base + extra)
 
 ## Una trappola lungo il percorso (prima della meta) ferma il movimento: meglio evitarla.
 func _penalita(perc: Array) -> float:
 	for n in perc.size():
 		if p.s["trappole_k"].has(perc[n]):
-			return 3.0 if n < perc.size() - 1 else 1.0
+			return 1.0 if n < perc.size() - 1 else 0.0
 	return 0.0
 
 func _obiettivo_s(i: int) -> String:

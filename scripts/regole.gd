@@ -132,9 +132,9 @@ func _mescola(a: Array) -> void:
 		a[j] = t
 
 func gioca() -> void:
-	_ev("La notte cala sulla %s. I Sopravvissuti entrano dall'%s, il Killer attende nel %s." % [
-		mappa["nome"], nome_luogo(mappa["partenza_s"]), nome_luogo(mappa["partenza_k"])], "S")
-	_ev("La notte cala sulla %s. Tu attendi nel %s: i Sopravvissuti sono entrati dall'%s." % [
+	var dove_k := "" if s["killer"]["id"] == "statue" else ", il Killer attende nel %s" % nome_luogo(mappa["partenza_k"])
+	_ev("Cala la notte: %s. I Sopravvissuti entrano da %s%s." % [mappa["nome"], nome_luogo(mappa["partenza_s"]), dove_k], "S")
+	_ev("Cala la notte: %s. Tu attendi nel %s; i Sopravvissuti sono entrati da %s." % [
 		mappa["nome"], nome_luogo(mappa["partenza_k"]), nome_luogo(mappa["partenza_s"])], "K")
 	await _preparativi()
 	while s["vincitore"] == "":

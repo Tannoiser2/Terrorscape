@@ -13,7 +13,7 @@ func _initialize() -> void:
 	await create_timer(0.5).timeout
 	main.nome_giocatore = "Host" if ruolo == "host" else "Ospite"
 	if ruolo == "host":
-		main._prep = {"ruolo": "K", "killer": "assassino", "sopr": ["anna", "george", "caleb"], "mappa": "villa"}
+		main._prep = {"ruolo": "K", "killer": OS.get_environment("TS_KILLER") if OS.get_environment("TS_KILLER") != "" else "assassino", "sopr": ["anna", "george", "caleb"], "mappa": OS.get_environment("TS_MAPPA") if OS.get_environment("TS_MAPPA") != "" else "villa"}
 		main._crea_stanza()
 		while main.codice == "":
 			await create_timer(0.3).timeout

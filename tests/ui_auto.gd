@@ -13,11 +13,12 @@ func _initialize() -> void:
 	main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
 	await create_timer(0.5).timeout
-	var killers := ["macellaio", "spettro", "assassino"]
+	var killers: Array = Dati.KILLER.keys()
+	var mappe: Array = Dati.MAPPE.keys()
 	var pool := ["anna", "william", "sophia", "marco", "johnson", "george", "ophelia", "dylan", "caleb"]
 	for g in n:
 		pool.shuffle()
-		main._prep = {"ruolo": ruolo, "killer": killers[g % 3], "sopr": pool.slice(0, 3), "mappa": "villa"}
+		main._prep = {"ruolo": ruolo, "killer": killers[g % killers.size()], "sopr": pool.slice(0, 3), "mappa": mappe[g % mappe.size()]}
 		main.velocita = 0.01
 		main._avvia_locale()
 		var mio := IA.new(main.partita, ruolo, g + 999)
