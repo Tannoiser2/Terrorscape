@@ -417,6 +417,30 @@ func _segnalini() -> void:
 		x.position = xy3d(xy, 0.55)
 		x.no_depth_test = true
 		segnalini.add_child(x)
+	# cancello del Castello
+	if p.s.get("cancello", "") != "":
+		var ab2: PackedStringArray = p.s["cancello"].split("|")
+		var xyc: Array = p.porta(ab2[0], ab2[1])["xy"]
+		var g := MeshInstance3D.new()
+		var gm := BoxMesh.new()
+		gm.size = Vector3(1.0, 0.7, 0.12)
+		g.mesh = gm
+		var mg := StandardMaterial3D.new()
+		mg.albedo_color = Color(0.45, 0.47, 0.5)
+		mg.metallic = 0.8
+		mg.roughness = 0.35
+		g.material_override = mg
+		g.position = xy3d(xyc, 0.35)
+		var dirc := xy3d(p.mappa["luoghi"][ab2[1]]["xy"]) - xy3d(p.mappa["luoghi"][ab2[0]]["xy"])
+		g.rotation.y = atan2(dirc.x, dirc.z) + PI / 2
+		segnalini.add_child(g)
+	# statua del corridoio e valigia
+	for l in p.mappa["luoghi"]:
+		var ld: Dictionary = p.mappa["luoghi"][l]
+		if ld.get("statua", false) and p.s.get("statua_corridoio", false):
+			_gettone(pos_luogo(l) + Vector3(-0.7, 0.05, 0.55), Color(0.75, 0.72, 0.65), "☠", 0.3)
+		if ld.get("valigia", false):
+			_gettone(pos_luogo(l) + Vector3(-0.7, 0.05, 0.55), Color(0.55, 0.32, 0.12) if p.s.get("valigia_su", false) else Color(0.25, 0.2, 0.18), "V", 0.3)
 	# rumori (il Killer li vede a fine turno dei Sopravvissuti; i Sopravvissuti li vedono subito)
 	var rum: Array = p.s["rumori"] if (lato == "S" or p.s["fase"] == "K") else p.s["rumori_prec"]
 	if lato == "K" and p.s["fase"] == "S":
@@ -446,6 +470,31 @@ func _segnalini() -> void:
 				lb.no_depth_test = true
 				lb.position = sagome["s%d" % i].position + Vector3(0, 2.0, 0)
 				segnalini.add_child(lb)
+
+## Fa brillare per qualche istante alcuni luoghi (percezioni, rumori, paura).
+func lampeggia(luoghi: Array, colore: Color, durata := 2.4) -> void:
+	for l in luoghi:
+		if not p.mappa["luoghi"].has(l):
+			continue
+		var m := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.95
+		cm.bottom_radius = 0.95
+		cm.height = 0.02
+		m.mesh = cm
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(colore, 0.45)
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.emission_enabled = true
+		mat.emission = colore
+		mat.emission_energy_multiplier = 1.6
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.material_override = mat
+		m.position = pos_luogo(l) + Vector3(0, 0.03, 0)
+		add_child(m)
+		var tw := m.create_tween()
+		tw.tween_property(mat, "albedo_color:a", 0.0, durata).set_ease(Tween.EASE_IN)
+		tw.tween_callback(m.queue_free)
 
 ## Il Killer annota dove ha visto un Sopravvissuto.
 func annota(i: int, l: String) -> void:

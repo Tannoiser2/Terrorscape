@@ -310,6 +310,28 @@ func _regole() -> void:
 	b.pressed.connect(_menu)
 	v.add_child(b)
 
+func _regole_sovrapposte() -> void:
+	var pc := _pannello(Color(0.04, 0.02, 0.025, 0.97), 18)
+	pc.set_anchors_preset(Control.PRESET_FULL_RECT)
+	pc.offset_left = 80
+	pc.offset_right = -80
+	pc.offset_top = 70
+	pc.offset_bottom = -40
+	radice.add_child(pc)
+	var v := VBoxContainer.new()
+	pc.add_child(v)
+	var rt := RichTextLabel.new()
+	rt.bbcode_enabled = true
+	rt.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	rt.add_theme_font_override("normal_font", F_TESTO)
+	rt.add_theme_font_override("bold_font", F_SC)
+	rt.add_theme_font_size_override("normal_font_size", 18)
+	rt.text = _testo_regole()
+	v.add_child(rt)
+	var b := _bottone("Chiudi")
+	b.pressed.connect(pc.queue_free)
+	v.add_child(b)
+
 func _testo_regole() -> String:
 	var t := "[b]Lo scopo[/b]\nUn Killer contro 3 Sopravvissuti intrappolati nella Villa. Il Killer vince se elimina un Sopravvissuto (due ferite). I Sopravvissuti vincono se trovano [b]5 chiavi[/b] e si radunano tutti all'uscita principale (o all'uscita nascosta con la Mappa segreta), oppure se [b]riparano la radio[/b] (5 riparazioni) e resistono 5 turni finché arrivano i soccorsi. Se il mazzo scoperta finisce prima, vince il Killer.\n\n"
 	t += "[b]Il turno dei Sopravvissuti[/b]\nOgni Sopravvissuto fa [b]una azione[/b]: [MUOVI] x1-2 · togli tutta la paura · azione speciale (oggetto o abilità) · togli un blocco nel tuo luogo · ripara la radio (fa rumore; non col Killer presente; una volta per turno) · [CERCA] in un luogo con la chiave (fa rumore se trovi oggetti rumorosi). In più: azioni extra degli oggetti e scambi tra chi è nello stesso luogo. Alla fine uno di loro [b]scopre[/b] 2 carte e ne tiene una, poi il Killer viene informato dei rumori.\n\n"
@@ -619,6 +641,17 @@ func _su_evento(e: Dictionary) -> void:
 	else:
 		registro.append_text("[color=%s]• %s[/color]\n" % [col, testo])
 	match e.get("tipo", ""):
+		"percepisci":
+			plancia.lampeggia(e["luoghi"], Color(0.9, 0.2, 0.2) if not e["trovati"].is_empty() else Color(0.6, 0.6, 0.7))
+		"paura_raggio":
+			plancia.lampeggia(partita.entro(e["centro"], int(e["raggio"])), Color(0.6, 0.3, 0.9))
+		"rumori":
+			plancia.lampeggia(e["luoghi"], Color(1.0, 0.55, 0.1), 3.5)
+			if mio_lato == "K" and modo != "osserva":
+				_toast(testo, Color("#ffb070"))
+		"incontro", "cerca_k":
+			plancia.lampeggia([e["luogo"]], Color(1, 0.1, 0.1) if e.get("trovati", []).size() > 0 else Color(0.5, 0.5, 0.5), 1.6)
+	match e.get("tipo", ""):
 		"tiro":
 			_toast_dadi(e)
 		"incontro", "livello", "radio", "trabocca", "riappare", "morte":
@@ -688,6 +721,9 @@ func _costruisci_hud() -> void:
 		if plancia._pitch < -80: plancia.vista_inclinata()
 		else: plancia.vista_dall_alto())
 	barra.add_child(bv)
+	var bq := _bottone_piccolo("Regole")
+	bq.pressed.connect(_regole_sovrapposte)
+	barra.add_child(bq)
 	var br := _bottone_piccolo("Registro")
 	br.pressed.connect(func(): box_registro.visible = not box_registro.visible)
 	barra.add_child(br)
@@ -1150,10 +1186,15 @@ func _bottoni_azioni(i: int, box: Control) -> void:
 			var ab: PackedStringArray = b.split("|")
 			var altro: String = ab[1] if ab[0] == sp["pos"] else ab[0]
 			aggiungi.call("Sblocca verso %s" % altro, func(): _decidi({"a": "blocco", "i": i, "porta": b}), Color(0.3, 0.2, 0.1))
-	if poss.has("passaggio"):
-		aggiungi.call("Passaggio segreto", func(): _decidi({"a": "passaggio", "i": i}), Color(0.2, 0.15, 0.3), "Osservatrice: attraversa il passaggio segreto")
-	if poss.has("passaggio_extra"):
-		aggiungi.call("Passaggio (extra)", func(): _decidi({"a": "passaggio_extra", "i": i}), Color(0.2, 0.15, 0.3))
+	for tipo_p in ["passaggio", "passaggio_extra"]:
+		if poss.has(tipo_p):
+			for dest in poss[tipo_p]:
+				aggiungi.call("Passaggio → %s" % dest, func(): _decidi({"a": tipo_p, "i": i, "dest": dest}), Color(0.2, 0.15, 0.3),
+					"Osservatrice: attraversa il passaggio segreto fino a %s" % partita.nome_luogo(dest))
+	if poss.has("valigia"):
+		aggiungi.call("Fruga nella valigia", func(): _decidi({"a": "valigia", "i": i}), Color(0.15, 0.25, 0.12), "Azione extra: pesca 1 carta dal mazzo scoperta")
+	if poss.has("leva"):
+		aggiungi.call("Aziona le leve", func(): _scegli_cancello(i), Color(0.3, 0.2, 0.1), "Azione extra: metti il cancello su una porta")
 	if poss.has("risorse"):
 		for o in poss["risorse"]:
 			aggiungi.call("Prendi %s" % Dati.OGGETTI[o]["nome"], func(): _decidi({"a": "risorse", "i": i, "ogg": o}), Color(0.15, 0.2, 0.3))
@@ -1171,6 +1212,17 @@ func _bottoni_azioni(i: int, box: Control) -> void:
 			aggiungi.call("Usa " + Dati.OGGETTI[o]["nome"], func(): _usa_oggetto(i, k), Color(0.2, 0.18, 0.08), Dati.OGGETTI[o]["testo"])
 	if poss.has("scambia"):
 		aggiungi.call("Dai un oggetto…", func(): _scegli_scambio(i, poss["scambia"]), Color(0.12, 0.12, 0.16), "Scambia oggetti con chi è nel tuo luogo")
+
+func _scegli_cancello(i: int) -> void:
+	sel_s = i
+	sel_azione = "leva"
+	var porte := []
+	for c in partita.mappa["collegamenti"]:
+		if c[2] == "porta":
+			porte.append(Partita.chiave_porta(c[0], c[1]))
+	plancia.mostra_scelta([], porte)
+	richiesta_titolo.text = "Le leve: clicca la porta dove far calare il cancello"
+	_bottoni_annulla()
 
 func _scegli_scambio(i: int, compagni: Array) -> void:
 	var sp: Dictionary = partita.s["sopr"][i]
@@ -1429,8 +1481,13 @@ func _mostra_richiesta() -> void:
 		"muovi_k":
 			plancia.mostra_scelta(req["vicini"], [], Color(1, 0.3, 0.25) if not req.get("furtivo", false) else Color(0.7, 0.4, 1))
 			sel_azione = "muovi_k"
-			richiesta_corpo.add_child(_riga("Clicca un luogo evidenziato sulla plancia.", 17))
-			if not req.get("obbligo", false):
+			if req["vicini"].is_empty():
+				var bloccato := _bottone("Non puoi muoverti: prosegui", SANGUE, 19)
+				bloccato.pressed.connect(func(): _decidi({"dest": ""}))
+				richiesta_corpo.add_child(bloccato)
+			else:
+				richiesta_corpo.add_child(_riga("Clicca un luogo evidenziato sulla plancia.", 17))
+			if not req.get("obbligo", false) and not req["vicini"].is_empty():
 				var b := _bottone("Fermati qui", SANGUE, 19)
 				b.pressed.connect(func(): _decidi({"dest": ""}))
 				richiesta_corpo.add_child(b)
@@ -1522,6 +1579,8 @@ func _su_porta(pt: String) -> void:
 			_decidi({"porta": pt})
 		"accetta":
 			_decidi({"a": "usa", "i": sel_s, "ogg": sel_extra["_k"], "porta": pt})
+		"leva":
+			_decidi({"a": "leva", "i": sel_s, "porta": pt})
 
 # ================================================================ fine partita
 

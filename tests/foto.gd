@@ -14,6 +14,21 @@ func _initialize() -> void:
 	main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
 	await _attendi(1.0)
+	if scen.begins_with("mappa:"):
+		var mp := scen.split(":")[1]
+		main._prep = {"ruolo": "S", "killer": "macellaio", "sopr": ["anna", "william", "marco"], "mappa": mp}
+		main._avvia_locale()
+		await _attendi(1.5)
+		main.plancia.vista_dall_alto()
+		var porte := []
+		for c in main.partita.mappa["collegamenti"]:
+			porte.append(Partita.chiave_porta(c[0], c[1]))
+		main.plancia.mostra_scelta(main.partita.mappa["luoghi"].keys(), porte)
+		main.box_registro.visible = false
+		await _attendi(0.8)
+		await _foto("mappa_" + mp)
+		quit()
+		return
 	match scen:
 		"menu":
 			await _foto("menu")

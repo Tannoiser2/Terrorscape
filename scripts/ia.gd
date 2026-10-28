@@ -45,12 +45,11 @@ func _diffondi(i: int, passi: int) -> void:
 			var w: float = cred[i][l]
 			var dest: Array = [l]
 			for v in p.vicini(l):
-				if not p.bloccata(l, v):
+				if not p.chiusa_sopr(l, v):
 					dest.append(v)
-			var pass_seg := p.passaggio_di(l)
 			for d in dest:
 				nuovo[d] = nuovo.get(d, 0.0) + w / dest.size()
-			if pass_seg != "":
+			for pass_seg in p.passaggi_di(l):
 				nuovo[pass_seg] = nuovo.get(pass_seg, 0.0) + w * 0.08
 		cred[i] = nuovo
 		_norm(i)
@@ -133,7 +132,7 @@ func _passo_verso(da: String, a: String) -> String:
 	var coda := [da]
 	while not coda.is_empty():
 		var x = coda.pop_front()
-		for v in p.vicini(x):
+		for v in p.vicini_k(x):
 			if not vis.has(v):
 				vis[v] = x
 				if v == a:
@@ -264,6 +263,8 @@ func _decidi_k(req: Dictionary) -> Dictionary:
 			var esclusa := -1
 			return {"carte": _peggiori(int(req["n"]), esclusa)}
 		"muovi_k":
+			if req["vicini"].is_empty():
+				return {"dest": ""}
 			var passo := _passo_verso(qui, obj)
 			if passo == "" or not req["vicini"].has(passo):
 				if req.get("obbligo", false):
@@ -551,6 +552,22 @@ func _azione_s() -> Dictionary:
 					return {"a": "usa", "i": i, "ogg": k, "percorso": perc}
 		if poss.has("meccanica") and p.s["riparazione"] < Dati.RIPARAZIONE_MAX:
 			return {"a": "meccanica", "i": i}
+		if poss.has("valigia") and danger < 0.75:
+			return {"a": "valigia", "i": i}
+		if poss.has("leva") and not p.s["killer"]["furtivo"]:
+			var kp := _kpos()
+			var miglior := ""
+			var md := 99
+			for pt in p.porte_di(kp):
+				var ab: PackedStringArray = pt.split("|")
+				var oltre: String = ab[1] if ab[0] == kp else ab[0]
+				for j in p.vivi():
+					var dd := p.distanza(oltre, p.s["sopr"][j]["pos"])
+					if dd < md:
+						md = dd
+						miglior = pt
+			if miglior != "" and p.s["cancello"] != miglior and md <= 2:
+				return {"a": "leva", "i": i, "porta": miglior}
 		if pp["agito"]:
 			continue
 		# azione principale

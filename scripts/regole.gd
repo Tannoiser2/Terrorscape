@@ -53,9 +53,15 @@ func prepara(config: Dictionary) -> void:
 		"rumori": [], "rumori_prec": [], "petardo": "",
 		"trappola": "",
 		"chiavi": 0, "riparazione": 0, "riparato_turno": false, "soccorso": -1,
+		"cancello": "", "statua_corridoio": false, "valigia_su": false,
 		"ricerca": [], "scoperta": [], "scarti_ogg": [],
 		"log": [],
 	}
+	for l in mappa["luoghi"]:
+		if mappa["luoghi"][l].get("statua", false):
+			s["statua_corridoio"] = true
+		if mappa["luoghi"][l].get("valigia", false):
+			s["valigia_su"] = true
 	for id in config["sopravvissuti"]:
 		var sd: Dictionary = Dati.SOPRAVVISSUTI[id]
 		var p := {"id": id, "pos": mappa["partenza_s"], "ferite": 0, "paura": 0, "oggetti": [], "vivo": true,
@@ -169,14 +175,40 @@ func porte_di(l: String) -> Array:
 			out.append(chiave_porta(l, v))
 	return out
 
-func passaggio_di(l: String) -> String:
+## Gruppi di passaggio segreto di un luogo (un luogo può averne più d'uno).
+func _gruppi_passaggio(l: String) -> Array:
 	var g = mappa["luoghi"][l].get("passaggio", "")
-	if g == "":
-		return ""
-	for o in mappa["luoghi"]:
-		if o != l and mappa["luoghi"][o].get("passaggio", "") == g:
-			return o
-	return ""
+	if g is Array:
+		return g
+	return [] if g == "" else [g]
+
+## Dove porta il passaggio segreto (o i passaggi) di un luogo.
+func passaggi_di(l: String) -> Array:
+	var out := []
+	for g in _gruppi_passaggio(l):
+		for o in mappa["luoghi"]:
+			if o != l and _gruppi_passaggio(o).has(g) and not out.has(o):
+				out.append(o)
+	return out
+
+## Il Killer può muoversi anche lungo i suoi passaggi riservati (Baita). Il cancello lo ferma
+## se non ha almeno 3 carte da scartare.
+func vicini_k(l: String) -> Array:
+	var out: Array = vicini(l).duplicate()
+	for c in mappa.get("passaggi_killer", []):
+		if c[0] == l and not out.has(c[1]):
+			out.append(c[1])
+		elif c[1] == l and not out.has(c[0]):
+			out.append(c[0])
+	if s.get("cancello", "") != "" and s["killer"]["mano"].size() < 3:
+		for v in out.duplicate():
+			if chiave_porta(l, v) == s["cancello"]:
+				out.erase(v)
+	return out
+
+## Porta chiusa per i Sopravvissuti: bloccata oppure con il cancello.
+func chiusa_sopr(a: String, b: String) -> bool:
+	return bloccata(a, b) or s.get("cancello", "") == chiave_porta(a, b)
 
 ## Distanza (in passi, i blocchi non contano; i passaggi segreti nemmeno).
 func distanza(a: String, b: String) -> int:
@@ -208,12 +240,12 @@ func zona(l: String) -> String:
 func passi_sopr(i: int, da: String, con_passaggi := false) -> Array:
 	var out := []
 	for v in vicini(da):
-		if not bloccata(da, v):
+		if not chiusa_sopr(da, v):
 			out.append(v)
 	if con_passaggi or ha_oggetto(i, "torcia"):
-		var p := passaggio_di(da)
-		if p != "" and not out.has(p):
-			out.append(p)
+		for p in passaggi_di(da):
+			if not out.has(p):
+				out.append(p)
 	return out
 
 ## Tutti i luoghi raggiungibili in 1..n passi (per l'interfaccia), con il percorso.
@@ -300,6 +332,21 @@ func _paura(i: int, fonte := "") -> void:
 		return
 	p["paura"] += 1
 	_ev("%s riceve paura (%d)%s." % [nome_s(i), p["paura"], (" da " + fonte) if fonte != "" else ""], "tutti", {"tipo": "paura", "i": i})
+
+## Paura immediata senza effetti di livello (usata dal Corridoio delle statue).
+func _paura_subito(i: int) -> void:
+	var p: Dictionary = s["sopr"][i]
+	if p["incoraggiamento"]:
+		p["incoraggiamento"] = false
+		return
+	if p["paura"] >= 2:
+		_ev("La paura di %s trabocca! Un urlo dal %s." % [nome_s(i), nome_luogo(p["pos"])], "tutti",
+			{"tipo": "trabocca", "i": i, "luogo": p["pos"]})
+		if not s["rumori"].has(p["pos"]):
+			s["rumori"].append(p["pos"])
+		return
+	p["paura"] += 1
+	_ev("%s riceve paura (%d)." % [nome_s(i), p["paura"]], "tutti", {"tipo": "paura", "i": i})
 
 func _danno(i: int, fonte := "") -> void:
 	var p: Dictionary = s["sopr"][i]
@@ -389,6 +436,9 @@ func _turno_sopravvissuti() -> void:
 	for i in vivi():
 		s["sopr"][i]["agito"] = false
 		s["sopr"][i]["moneta"] = false
+	for l in mappa["luoghi"]:
+		if mappa["luoghi"][l].get("valigia", false):
+			s["valigia_su"] = true
 	cambiato.emit()
 	# azioni
 	var giri := 0
@@ -484,8 +534,8 @@ func azioni_possibili(i: int) -> Dictionary:
 			out["cerca"] = true
 		if p["id"] == "william":
 			out["scatto"] = true
-		if p["id"] == "sophia" and passaggio_di(l) != "" and not ha_oggetto(i, "torcia"):
-			out["passaggio"] = true
+		if p["id"] == "sophia" and not passaggi_di(l).is_empty() and not ha_oggetto(i, "torcia"):
+			out["passaggio"] = passaggi_di(l)
 		if p["id"] == "marco":
 			var ris := []
 			for o in ["adrenalina", "tranquillante"]:
@@ -509,8 +559,12 @@ func azioni_possibili(i: int) -> Dictionary:
 			if not bers.is_empty():
 				out["incoraggia"] = bers
 	# extra sempre disponibili
-	if p["id"] == "sophia" and passaggio_di(l) != "" and ha_oggetto(i, "torcia"):
-		out["passaggio_extra"] = true
+	if p["id"] == "sophia" and not passaggi_di(l).is_empty() and ha_oggetto(i, "torcia"):
+		out["passaggio_extra"] = passaggi_di(l)
+	if mappa["luoghi"][l].get("valigia", false) and s["valigia_su"] and not s["scoperta"].is_empty():
+		out["valigia"] = true
+	if mappa["luoghi"][l].get("leva", false):
+		out["leva"] = true
 	if p["id"] == "dylan" and mappa["luoghi"][l].get("martello", false) and s["scarti_ogg"].has("cassetta"):
 		out["meccanica"] = true
 	# oggetti utilizzabili
@@ -594,6 +648,13 @@ func _muovi_sopr(i: int, perc: Array, come := "") -> void:
 	var p: Dictionary = s["sopr"][i]
 	var da: String = p["pos"]
 	p["pos"] = perc[-1]
+	if s.get("statua_corridoio", false):
+		for l in perc:
+			if mappa["luoghi"][l].get("statua", false):
+				s["statua_corridoio"] = false
+				_ev("Nel %s una statua si volta verso %s!" % [nome_luogo(l), nome_s(i)], "tutti", {"tipo": "statua", "luogo": l})
+				_paura_subito(i)
+				break
 	var nomi := []
 	for l in perc:
 		nomi.append(nome_luogo(l))
@@ -652,9 +713,32 @@ func esegui_s(d: Dictionary) -> bool:
 		"passaggio", "passaggio_extra":
 			if not poss.has(a):
 				return false
+			var dest: String = d.get("dest", poss[a][0])
+			if not poss[a].has(dest):
+				dest = poss[a][0]
 			if a == "passaggio":
 				p["agito"] = true
-			_muovi_sopr(i, [passaggio_di(l)], "usa il passaggio segreto")
+			_muovi_sopr(i, [dest], "usa il passaggio segreto")
+		"valigia":
+			if not poss.has("valigia"):
+				return false
+			s["valigia_su"] = false
+			var o: String = s["scoperta"].pop_back()
+			_ev("%s fruga nella valigia." % nome_s(i), "S", {"tipo": "valigia"})
+			if Dati.OGGETTI[o].get("rumore", false):
+				_rumore(l, Dati.OGGETTI[o]["nome"])
+			var dv := await chiedi("S", {"tipo": "cerca_tieni", "i": i, "carta": o, "titolo": "%s trova nella valigia: %s. La tieni?" % [nome_s(i), Dati.OGGETTI[o]["nome"]]})
+			if dv.get("tieni", true):
+				await _prendi_oggetto(i, o)
+			else:
+				s["scarti_ogg"].append(o)
+		"leva":
+			var pt: String = d.get("porta", "")
+			if not poss.has("leva") or not _porte.has(pt) or _porte[pt]["tipo"] != "porta":
+				return false
+			s["cancello"] = pt
+			_ev("%s aziona le leve: il cancello cala tra %s e %s." % [nome_s(i), nome_luogo(pt.split("|")[0]), nome_luogo(pt.split("|")[1])], "tutti",
+				{"tipo": "cancello", "porta": pt})
 		"risorse":
 			var o: String = d.get("ogg", "")
 			if not poss.has("risorse") or not poss["risorse"].has(o):
@@ -941,10 +1025,10 @@ func _turno_killer() -> void:
 			for n in 2:
 				if k["incontro"] or s["vincitore"] != "":
 					break
-				var d2 := await chiedi("K", {"tipo": "azione_k", "n": n + 1, "vicini": vicini(k["pos"]),
+				var d2 := await chiedi("K", {"tipo": "azione_k", "n": n + 1, "vicini": vicini_k(k["pos"]),
 					"titolo": "Azione %d di 2: [MUOVI] x1 o [CERCA]" % (n + 1)})
-				if d2.get("a", "") == "muovi" and vicini(k["pos"]).has(d2.get("dest", "")):
-					_passo_killer(d2["dest"])
+				if d2.get("a", "") == "muovi" and vicini_k(k["pos"]).has(d2.get("dest", "")):
+					await _passo_killer(d2["dest"])
 				elif d2.get("a", "") == "cerca":
 					await _cerca_k()
 				cambiato.emit()
@@ -1089,6 +1173,30 @@ func _passo_killer(dest: String, furtivo := false) -> bool:
 	var k: Dictionary = s["killer"]
 	var da: String = k["pos"]
 	var tolto := false
+	if s.get("cancello", "") != "" and s["cancello"] == chiave_porta(da, dest):
+		# il cancello: il Killer lo sfonda scartando 3 carte
+		var scelte: Array = []
+		if k["mano"].size() > 3:
+			var dc := await chiedi("K", {"tipo": "costo", "n": 3, "carta": "",
+				"titolo": "Il cancello: scegli 3 carte da scartare per sfondarlo"})
+			scelte = dc.get("carte", [])
+		var valide := []
+		for x in scelte:
+			var xi := int(x)
+			if xi >= 0 and xi < k["mano"].size() and not valide.has(xi):
+				valide.append(xi)
+		var x2 := 0
+		while valide.size() < mini(3, k["mano"].size()) and x2 < k["mano"].size():
+			if not valide.has(x2):
+				valide.append(x2)
+			x2 += 1
+		valide.sort()
+		valide.reverse()
+		for x in valide:
+			k["scarti"].append(k["mano"][x])
+			k["mano"].remove_at(x)
+		s["cancello"] = ""
+		_ev("%s scarta 3 carte e sfonda il cancello!" % nome_k(), "tutti", {"tipo": "cancello_rotto"})
 	if bloccata(da, dest) and not furtivo:
 		s["blocchi"].erase(chiave_porta(da, dest))
 		tolto = true
@@ -1107,15 +1215,16 @@ func _muovi_k(nmin: int, nmax: int, titolo := "[MUOVI]", furtivo := false) -> Di
 	var perc := [k["pos"]]
 	var sblocchi := 0
 	for n in nmax:
-		var d := await chiedi("K", {"tipo": "muovi_k", "vicini": vicini(k["pos"]), "obbligo": n < nmin, "passo": n + 1, "max": nmax,
+		var vk := vicini_k(k["pos"])
+		var d := await chiedi("K", {"tipo": "muovi_k", "vicini": vk, "obbligo": n < nmin, "passo": n + 1, "max": nmax,
 			"furtivo": furtivo, "titolo": "%s: passo %d di %d%s" % [titolo, n + 1, nmax, "" if n < nmin else " (puoi fermarti)"]})
 		var dest: String = d.get("dest", "")
-		if dest == "" or not vicini(k["pos"]).has(dest):
-			if n < nmin:
-				dest = vicini(k["pos"])[0]
+		if dest == "" or not vk.has(dest):
+			if n < nmin and not vk.is_empty():
+				dest = vk[0]
 			else:
 				break
-		if _passo_killer(dest, furtivo):
+		if await _passo_killer(dest, furtivo):
 			sblocchi += 1
 		perc.append(dest)
 		cambiato.emit()
@@ -1432,15 +1541,16 @@ func _effetto(id: String) -> void:
 			for n in 4:
 				if s["vincitore"] != "":
 					return
-				var d := await chiedi("K", {"tipo": "muovi_k", "vicini": vicini(k["pos"]), "obbligo": n < 1, "passo": n + 1, "max": 4,
+				var vk := vicini_k(k["pos"])
+				var d := await chiedi("K", {"tipo": "muovi_k", "vicini": vk, "obbligo": n < 1, "passo": n + 1, "max": 4,
 					"titolo": "Sfrecciare: passo %d di 4%s" % [n + 1, "" if n < 1 else " (puoi fermarti)"]})
 				var dest: String = d.get("dest", "")
-				if dest == "" or not vicini(k["pos"]).has(dest):
-					if n < 1:
-						dest = vicini(k["pos"])[0]
+				if dest == "" or not vk.has(dest):
+					if n < 1 and not vk.is_empty():
+						dest = vk[0]
 					else:
 						break
-				_passo_killer(dest)
+				await _passo_killer(dest)
 				for i in in_luogo(dest):
 					await _paura(i, nome_k())
 				cambiato.emit()

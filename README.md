@@ -9,8 +9,12 @@ questa conversione è solo per uso personale, ricavata dal modulo per Tabletop S
 
 ## Cosa c'è
 
-- **La Villa**, con le sue 15 stanze, le porte bloccabili, i passaggi segreti, la radio e i luoghi
-  delle chiavi. La plancia è in 3D e mostra solo il tabellone del lato che stai giocando:
+- **Tre mappe**, ognuna con porte bloccabili, passaggi segreti, radio e luoghi delle chiavi:
+  - **La Villa** (gioco base);
+  - **La Baita** (valigia da trovare, passaggio riservato al Killer);
+  - **Il Castello** (leva del cancello: il Killer deve scartare 3 carte per attraversarlo;
+    la statua nel corridoio spaventa chi passa).
+  La plancia è in 3D e mostra solo il tabellone del lato che stai giocando:
   il Killer vede il suo (con i rumori e i Sopravvissuti avvistati), i Sopravvissuti il loro.
 - **Tre Killer** con mazzo, carta bloccata e i cinque livelli: il Macellaio, lo Spettro, l'Assassino.
 - **Nove Sopravvissuti** con le loro abilità e i loro oggetti personali: Anna, William, Sophia, Marco,
@@ -34,8 +38,9 @@ Il modulo TTS di partenza ha alcune immagini vuote: mancano 18 delle 32 carte de
 Le carte oggetto mancanti sono ricostruite dal regolamento (Chiave, Torcia, Petardo, Bottiglia di
 whisky, Polvere di calce, Tranquillante, Revolver, Munizioni) e disegnate dal gioco nello stesso
 stile; i loro effetti sono in `scripts/dati.gd` e si possono correggere facilmente.
-Le altre mappe (Baita, Castello, Tomba) e gli altri Killer delle espansioni sono nel materiale e
-verranno aggiunti in seguito.
+La Tomba, il Laboratorio (senza immagini nel modulo) e gli altri Killer delle espansioni
+verranno aggiunti in seguito. Le regole speciali di Baita e Castello sono ricostruite dal
+materiale disponibile e si possono ritoccare in `scripts/dati.gd` / `scripts/regole.gd`.
 
 ## Gioco online
 

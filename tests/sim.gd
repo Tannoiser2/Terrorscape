@@ -24,7 +24,9 @@ func _initialize() -> void:
 		for k in 3:
 			scelti.append(pool.pop_at(rr.randi_range(0, pool.size() - 1)))
 		var killer: String = killers[g % killers.size()]
-		p.prepara({"mappa": "villa", "killer": killer, "sopravvissuti": scelti, "seme": g + 1})
+		var mappe := ["villa", "baita", "castello"]
+		var mp: String = mappe[(g / 3) % 3] if args.size() < 3 else args[2]
+		p.prepara({"mappa": mp, "killer": killer, "sopravvissuti": scelti, "seme": g + 1})
 		var ia_k := IA.new(p, "K", g + 100)
 		var ia_s := IA.new(p, "S", g + 200)
 		p.richiesta.connect(func(lato, req):
@@ -38,7 +40,7 @@ func _initialize() -> void:
 		var m: String = p.s["motivo"].split(" ")[0] if v == "K" else p.s["motivo"].substr(0, 18)
 		motivi[v + " " + m] = motivi.get(v + " " + m, 0) + 1
 		turni_tot += p.s["turno"]
-		print("partita %d %s vs %s: %s al turno %d (chiavi %d, radio %d, livello %d)" % [g, killer, str(scelti), risultato[0], p.s["turno"],
+		print("partita %d [%s] %s vs %s: %s al turno %d (chiavi %d, radio %d, livello %d)" % [g, p.s["mappa"], killer, str(scelti), risultato[0], p.s["turno"],
 			p.s["chiavi"], p.s["riparazione"], p.s["killer"]["livello"]])
 		p.queue_free()
 	print("Vittorie: ", vittorie, "  turni medi: ", float(turni_tot) / n)
