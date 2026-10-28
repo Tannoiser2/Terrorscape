@@ -24,8 +24,8 @@ func _initialize() -> void:
 		for k in 3:
 			scelti.append(pool.pop_at(rr.randi_range(0, pool.size() - 1)))
 		var killer: String = killers[g % killers.size()]
-		var mappe := ["villa", "baita", "castello", "tomba"]
-		var mp: String = mappe[(g / killers.size()) % 4] if args.size() < 3 else args[2]
+		var mappe: Array = Dati.MAPPE.keys()
+		var mp: String = mappe[(g / killers.size()) % mappe.size()] if args.size() < 3 else args[2]
 		p.prepara({"mappa": mp, "killer": killer, "sopravvissuti": scelti, "seme": g + 1})
 		var ia_k := IA.new(p, "K", g + 100)
 		var ia_s := IA.new(p, "S", g + 200)

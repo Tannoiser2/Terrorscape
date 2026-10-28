@@ -479,6 +479,9 @@ func _segnalini() -> void:
 		var n: int = conta_n.get(l, 0)
 		conta_n[l] = n + 1
 		_ritto(pos_luogo(l) + Vector3(-0.75 + 0.3 * n, 0.0, -0.55), "res://assets/mini/nucleo.webp", 0.6)
+	for l in p.mappa["luoghi"]:
+		if p.mappa["luoghi"][l].get("armadietto", false) and p.s.get("armadietto", false):
+			_gettone(pos_luogo(l) + Vector3(-0.72, 0.05, 0.55), Color(0.85, 0.15, 0.15), "+", 0.3)
 	for l in p.s["forzieri"]:
 		_piatto(pos_luogo(l) + Vector3(-0.72, 0.03, 0.6), "res://assets/gettoni/forziere.webp", 0.5)
 	for cr in [p.s["crollo_k"], p.s["crollo_s"]]:

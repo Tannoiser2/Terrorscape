@@ -94,6 +94,13 @@ func prepara(config: Dictionary) -> void:
 	# mano iniziale del Killer: 2 carte
 	for i in 2:
 		s["killer"]["mano"].append(s["killer"]["mazzo"].pop_back())
+	# Laboratorio: porta bloccata e armadietto di primo soccorso
+	for c in mappa.get("blocchi_iniziali", []):
+		s["blocchi"].append(chiave_porta(c[0], c[1]))
+	s["armadietto"] = false
+	for l in mappa["luoghi"]:
+		if mappa["luoghi"][l].get("armadietto", false):
+			s["armadietto"] = true
 	# Tomba: il mazzo delle reliquie
 	for l in mappa["luoghi"]:
 		if mappa["luoghi"][l].get("reliquie", false):
@@ -112,12 +119,11 @@ func prepara(config: Dictionary) -> void:
 					arg.append(o)
 			_mescola(arg)
 			s["argento"] = arg
-			var cand := []
+			# uno scrigno nell'uscita nascosta e nei luoghi con spirale, libro e martello
 			for l in mappa["luoghi"]:
-				if l != mappa["partenza_s"] and l != mappa["partenza_k"]:
-					cand.append(l)
-			_mescola(cand)
-			s["forzieri"] = cand.slice(0, 4)
+				var ld: Dictionary = mappa["luoghi"][l]
+				if ld.get("uscita_nascosta", false) or ld.get("spirale", false) or ld.get("libro", false) or ld.get("martello", false):
+					s["forzieri"].append(l)
 		"strangolatore":
 			s["nuclei"] = [mappa["partenza_k"]]
 		"statue":
@@ -150,45 +156,55 @@ func _preparativi() -> void:
 	var k: Dictionary = s["killer"]
 	match k["id"]:
 		"cacciatrice":
-			var tipi := ["tagliola", "teschi", "rete", "rete"]
-			for t in tipi:
-				var cand := []
-				for l in mappa["luoghi"]:
-					if distanza(l, mappa["partenza_s"]) >= 1 and not s["trappole_k"].has(l):
-						cand.append(l)
-				var d := await chiedi("K", {"tipo": "luogo", "luoghi": cand, "scopo": "trappola", "trappola": t,
-					"titolo": "Preparativi: dove piazzi la trappola «%s»?" % Dati.TRAPPOLE[t]["nome"]})
-				var l: String = d.get("dest", "")
-				if not cand.has(l):
-					l = cand[0]
+			# una trappola coperta in ogni luogo con la chiave o la radio; il Killer ne sceglie il tipo
+			var tipi := ["rete", "rete", "teschi", "tagliola"]
+			var luoghi := []
+			for l in mappa["luoghi"]:
+				if mappa["luoghi"][l].get("chiave", false) or mappa["luoghi"][l].get("radio", false):
+					luoghi.append(l)
+			for l in luoghi:
+				_ev("Una trappola coperta viene piazzata nel %s." % nome_luogo(l), "tutti", {"tipo": "trappola_piazzata", "luogo": l})
+			for l in luoghi:
+				if tipi.is_empty():
+					break
+				var diversi := []
+				for t in tipi:
+					if not diversi.has(t):
+						diversi.append(t)
+				var t: String = diversi[0]
+				if diversi.size() > 1:
+					var opz := []
+					for x in diversi:
+						opz.append("%s: %s" % [Dati.TRAPPOLE[x]["nome"], Dati.TRAPPOLE[x]["testo"]])
+					var d := await chiedi("K", {"tipo": "scelta", "opzioni": opz, "scopo": "tipo_trappola", "chiavi": diversi, "luogo": l,
+						"titolo": "Preparativi: che trappola metti nel %s?" % nome_luogo(l)})
+					t = diversi[clampi(int(d.get("n", 0)), 0, diversi.size() - 1)]
+				tipi.erase(t)
 				s["trappole_k"][l] = t
-				_ev("La Cacciatrice piazza una trappola coperta nel %s." % nome_luogo(l), "tutti", {"tipo": "trappola_piazzata", "luogo": l})
+			# le trappole non usate restano da parte (si possono riattivare)
+			for t in tipi:
+				s["trappole_scattate"].append(t)
 		"statue":
-			for j in range(1, 4):
-				var cand := []
-				for l in mappa["luoghi"]:
-					if distanza(l, mappa["partenza_s"]) >= 2:
-						var occupato := false
-						for st in s["statue"].slice(0, j):
-							if st["pos"] == l:
-								occupato = true
-						if not occupato:
-							cand.append(l)
-				var d := await chiedi("K", {"tipo": "luogo", "luoghi": cand, "scopo": "statua",
-					"titolo": "Preparativi: dove metti la Statua %s?" % s["statue"][j]["nome"]})
-				var l: String = d.get("dest", "")
-				if not cand.has(l):
-					l = cand[0]
-				s["statue"][j]["pos"] = l
+			# 2 Statue nell'uscita nascosta, 2 nell'uscita principale
+			var nascosta: String = mappa["partenza_k"]
+			var principale_l: String = mappa["partenza_s"]
+			for l in mappa["luoghi"]:
+				if mappa["luoghi"][l].get("uscita_nascosta", false):
+					nascosta = l
+				if mappa["luoghi"][l].get("uscita", false):
+					principale_l = l
+			s["statue"][0]["pos"] = nascosta
+			s["statue"][1]["pos"] = nascosta
+			s["statue"][2]["pos"] = principale_l
+			s["statue"][3]["pos"] = principale_l
 			var opz := []
 			for st in s["statue"]:
 				opz.append("Statua %s (%s)" % [st["nome"], nome_luogo(st["pos"])])
 			var d2 := await chiedi("K", {"tipo": "scelta", "opzioni": opz, "scopo": "principale",
 				"titolo": "Quale Statua è la principale? (i Sopravvissuti non lo sanno)"})
-			var n := int(d2.get("n", 0))
-			k["principale"] = clampi(n, 0, 3)
+			k["principale"] = clampi(int(d2.get("n", 0)), 0, 3)
 			_sync_statue()
-			_ev("Quattro Statue si ergono nella %s." % mappa["nome"], "tutti", {"tipo": "statue"})
+			_ev("Quattro Statue si ergono: due nel %s, due nel %s." % [nome_luogo(nascosta), nome_luogo(principale_l)], "tutti", {"tipo": "statue"})
 		"regina":
 			var vv := vivi()
 			var d := await chiedi("S", {"tipo": "sopravvissuto", "candidati": vv, "titolo": "Preparativi: chi riceve la Balestra?"})
@@ -713,6 +729,13 @@ func azioni_possibili(i: int) -> Dictionary:
 			out["crollo"] = true
 		if ld.get("reliquie", false) and s["reliquie_aperte"] and not s["reliquie"].is_empty() and not killer_qui:
 			out["cerca_reliquie"] = true
+		if ld.get("armadietto", false) and s.get("armadietto", false):
+			var bers := []
+			for j in in_luogo(l):
+				if ha_bisogno_cura(j) or s["sopr"][j]["paura"] > 0:
+					bers.append(j)
+			if not bers.is_empty():
+				out["armadietto"] = bers
 		out["muovi"] = true
 		if p["paura"] > 0:
 			out["paura"] = true
@@ -858,13 +881,15 @@ func _percorso_valido(i: int, perc: Array, nmax: int, con_passaggi := false) -> 
 func _muovi_sopr(i: int, perc: Array, come := "") -> void:
 	var p: Dictionary = s["sopr"][i]
 	var da: String = p["pos"]
-	# trappole della Cacciatrice: la prima che si incontra scatta e ferma il movimento
-	var scatta := ""
+	# trappole della Cacciatrice: scattano quando ci si entra; solo la rete ferma il movimento
+	var scattate := []
 	for n in perc.size():
 		if s["trappole_k"].has(perc[n]):
-			scatta = perc[n]
-			perc = perc.slice(0, n + 1)
-			break
+			var t: String = s["trappole_k"][perc[n]]
+			scattate.append([perc[n], t])
+			if t == "rete":
+				perc = perc.slice(0, n + 1)
+				break
 	p["pos"] = perc[-1]
 	if s.get("statua_corridoio", false):
 		for l in perc:
@@ -878,21 +903,27 @@ func _muovi_sopr(i: int, perc: Array, come := "") -> void:
 		nomi.append(nome_luogo(l))
 	_ev("%s%s: %s → %s." % [nome_s(i), (" " + come) if come != "" else "", nome_luogo(da), " → ".join(nomi)], "S",
 		{"tipo": "movimento_s", "i": i, "percorso": [da] + perc})
-	if scatta != "":
-		var t: String = s["trappole_k"][scatta]
-		s["trappole_k"].erase(scatta)
+	# Stanza sterile: chi ci entra fa rumore
+	for l in perc:
+		if mappa["luoghi"][l].get("sterile", false):
+			_rumore(l, "la Stanza sterile")
+	for st in scattate:
+		var l: String = st[0]
+		var t: String = st[1]
+		s["trappole_k"].erase(l)
 		s["trappole_scattate"].append(t)
-		_ev("SCATTA UNA TRAPPOLA! %s finisce in una %s nel %s." % [nome_s(i), Dati.TRAPPOLE[t]["nome"], nome_luogo(scatta)], "tutti",
-			{"tipo": "trappola_scattata", "i": i, "luogo": scatta, "trappola": t})
+		_ev("SCATTA UNA TRAPPOLA! %s finisce in una %s nel %s." % [nome_s(i), Dati.TRAPPOLE[t]["nome"], nome_luogo(l)], "tutti",
+			{"tipo": "trappola_scattata", "i": i, "luogo": l, "trappola": t})
 		match t:
 			"tagliola":
-				_danno(i, "la Tagliola")
+				_danno(i, "la Trappola per orsi")
 			"teschi":
-				_paura_subito(i)
 				_paura_subito(i)
 			"rete":
 				p["intrappolato"] = true
-				_ev("%s è avvolto nella rete: non può lasciare il luogo in questo turno." % nome_s(i), "tutti")
+				_ev("%s è immobilizzato nella rete per il resto del turno." % nome_s(i), "tutti")
+		if s["vincitore"] != "":
+			return
 
 ## Esegue un'azione dei Sopravvissuti. Restituisce false se non è valida.
 func esegui_s(d: Dictionary) -> bool:
@@ -970,7 +1001,7 @@ func esegui_s(d: Dictionary) -> bool:
 			if not poss.has("leva") or not _porte.has(pt) or _porte[pt]["tipo"] != "porta":
 				return false
 			s["cancello"] = pt
-			_ev("%s aziona le leve: il cancello cala tra %s e %s." % [nome_s(i), nome_luogo(pt.split("|")[0]), nome_luogo(pt.split("|")[1])], "tutti",
+			_ev("%s aziona le leve: la saracinesca cala tra %s e %s." % [nome_s(i), nome_luogo(pt.split("|")[0]), nome_luogo(pt.split("|")[1])], "tutti",
 				{"tipo": "cancello", "porta": pt})
 		"risorse":
 			var o: String = d.get("ogg", "")
@@ -986,6 +1017,7 @@ func esegui_s(d: Dictionary) -> bool:
 			p["agito"] = true
 			if sc == "cassetta":
 				_scarta_oggetto(i, "cassetta")
+				s["riparato_turno"] = true
 				s["riparazione"] = mini(Dati.RIPARAZIONE_MAX, s["riparazione"] + 1)
 				_ev("George studia gli schemi: riparazione %d/5." % s["riparazione"], "S", {"tipo": "riparazione"})
 				_controlla_radio()
@@ -1013,14 +1045,24 @@ func esegui_s(d: Dictionary) -> bool:
 			p["agito"] = true
 			p["no_extra"] = true
 			s["statue"][j]["gelo"] = 1
-			_ev("%s congela la Statua %s nel %s: non potrà muoversi né cercare." % [nome_s(i), s["statue"][j]["nome"], nome_luogo(l)], "tutti",
+			_ev("%s immobilizza la Statua %s nel %s: non potrà muoversi né cercare." % [nome_s(i), s["statue"][j]["nome"], nome_luogo(l)], "tutti",
 				{"tipo": "gelo", "statua": j, "luogo": l})
+		"armadietto":
+			var j := int(d.get("bersaglio", -1))
+			if not poss.has("armadietto") or not poss["armadietto"].has(j):
+				return false
+			p["agito"] = true
+			s["armadietto"] = false
+			_cura(j)
+			s["sopr"][j]["paura"] = 0
+			_ev("%s usa l'Armadietto di primo soccorso su %s." % [nome_s(i), nome_s(j)], "S", {"tipo": "calma", "i": j})
+			_ev("L'Armadietto di primo soccorso è stato usato.", "K", {"tipo": "armadietto"})
 		"nucleo":
 			if not poss.has("nucleo"):
 				return false
 			p["agito"] = true
 			s["nuclei"].erase(l)
-			_ev("%s strappa un nucleo nel %s." % [nome_s(i), nome_luogo(l)], "tutti", {"tipo": "nucleo_tolto", "luogo": l})
+			_ev("%s strappa un nocciolo nel %s." % [nome_s(i), nome_luogo(l)], "tutti", {"tipo": "nucleo_tolto", "luogo": l})
 		"apri_reliquie":
 			if not poss.has("apri_reliquie"):
 				return false
@@ -1047,7 +1089,7 @@ func esegui_s(d: Dictionary) -> bool:
 				return false
 			s["forzieri"].erase(l)
 			var o: String = s["argento"].pop_back()
-			_ev("%s apre un forziere nel %s." % [nome_s(i), nome_luogo(l)], "tutti", {"tipo": "forziere", "luogo": l})
+			_ev("%s apre uno scrigno del tesoro nel %s." % [nome_s(i), nome_luogo(l)], "tutti", {"tipo": "forziere", "luogo": l})
 			await _prendi_oggetto(i, o)
 		"usa":
 			return await _usa(i, d)
@@ -1427,24 +1469,18 @@ func _turno_killer() -> void:
 func _azione_base(n: int) -> void:
 	var k: Dictionary = s["killer"]
 	if k["id"] == "statue":
-		var libere := []
-		var opz := []
-		for j in s["statue"].size():
-			if s["statue"][j]["gelo"] <= 0:
-				libere.append(j)
-				opz.append("Statua %s%s (%s)" % [s["statue"][j]["nome"], " ★" if j == k["principale"] else "", nome_luogo(s["statue"][j]["pos"])])
-		if libere.is_empty():
+		# solo la Statua principale fa le azioni normali (e non se è immobilizzata)
+		var j: int = k["principale"]
+		if s["statue"][j]["gelo"] > 0:
+			_ev("La Statua principale è immobilizzata: niente azioni.", "K")
 			return
-		var ds := await chiedi("K", {"tipo": "scelta", "opzioni": opz, "scopo": "statua_azione",
-			"titolo": "Azione %d di 2: quale Statua agisce?" % (n + 1)})
-		var j: int = libere[clampi(int(ds.get("n", 0)), 0, libere.size() - 1)]
 		var pos: String = s["statue"][j]["pos"]
-		var d2 := await chiedi("K", {"tipo": "azione_k", "n": n + 1, "vicini": vicini_k(pos), "da": pos,
-			"titolo": "Statua %s: [MUOVI] x1 o [CERCA]" % s["statue"][j]["nome"]})
-		if d2.get("a", "") == "muovi" and vicini_k(pos).has(d2.get("dest", "")):
-			_passo_statua(j, d2["dest"])
-		elif d2.get("a", "") == "cerca":
-			await _cerca_luogo(pos, "la Statua %s" % s["statue"][j]["nome"])
+		var d3 := await chiedi("K", {"tipo": "azione_k", "n": n + 1, "vicini": vicini_k(pos), "da": pos,
+			"titolo": "Azione %d di 2 (Statua principale): [MUOVI] x1 o [CERCA]" % (n + 1)})
+		if d3.get("a", "") == "muovi" and vicini_k(pos).has(d3.get("dest", "")):
+			_passo_statua(j, d3["dest"])
+		elif d3.get("a", "") == "cerca":
+			await _cerca_luogo(pos, "Una Statua")
 		return
 	var d2 := await chiedi("K", {"tipo": "azione_k", "n": n + 1, "vicini": vicini_k(k["pos"]), "da": k["pos"],
 		"titolo": "Azione %d di 2: [MUOVI] x1 o [CERCA]" % (n + 1)})
@@ -1593,7 +1629,7 @@ func _sali_livello() -> void:
 				if k["scarti"].has("accerchiamento"):
 					k["scarti"].erase("accerchiamento")
 					k["mano"].append("accerchiamento")
-					_ev("Le Statue riprendono «Accerchiamento».", "K")
+					_ev("Le Statue riprendono «Accerchiare».", "K")
 			# livello 1: a ogni salita si può cambiare la Statua principale
 			await _scegli_principale("Sali di livello: vuoi cambiare la Statua principale?")
 		"strangolatore":
@@ -1609,7 +1645,7 @@ func _sali_livello() -> void:
 						if l != primo:
 							cand.append(l)
 					var d := await chiedi("K", {"tipo": "luogo", "luoghi": cand, "scopo": "nucleo",
-						"titolo": "Livello 4: dove metti un nucleo? (%d/2)" % (n + 1)})
+						"titolo": "Livello 4: dove metti un nocciolo? (%d/2)" % (n + 1)})
 					var l: String = d.get("dest", "")
 					if not cand.has(l):
 						l = cand[0]
@@ -1627,9 +1663,9 @@ func _sali_livello() -> void:
 					"titolo": "Livello %d: scegli una carta Evoluzione" % lv})
 				var e: String = dispo[clampi(int(d.get("n", 0)), 0, dispo.size() - 1)]
 				k["evoluzioni"].append(e)
-				_ev("Il Non Identificato evolve: %s." % Dati.EVOLUZIONI[e]["nome"], "tutti", {"tipo": "evoluzione", "evo": e})
+				_ev("L'Ignoto evolve: %s." % Dati.EVOLUZIONI[e]["nome"], "tutti", {"tipo": "evoluzione", "evo": e})
 			elif lv == 3:
-				var d := await chiedi("K", {"tipo": "scelta", "opzioni": ["Rumore stridente: " + carta("stridio")["testo"], "Sputo acido: " + carta("acido")["testo"]],
+				var d := await chiedi("K", {"tipo": "scelta", "opzioni": ["Suono stridente: " + carta("stridio")["testo"], "Rigurgito acido: " + carta("acido")["testo"]],
 					"scopo": "ultima", "titolo": "Livello 3: quale carta sblocchi?"})
 				k["bloccata"] = "acido" if int(d.get("n", 0)) == 1 else "stridio"
 				await _sblocca()
@@ -1649,10 +1685,10 @@ func _scegli_principale(titolo: String) -> void:
 
 func _metti_nucleo(l: String) -> void:
 	if s["nuclei"].size() >= 5:
-		_ev("Non ci sono altri nuclei.", "K")
-		return
+		var via: String = s["nuclei"].pop_front()
+		_ev("Tutti i noccioli sono in gioco: quello nel %s viene ricollocato." % nome_luogo(via), "tutti", {"tipo": "nucleo_tolto", "luogo": via})
 	s["nuclei"].append(l)
-	_ev("Un nucleo germoglia nel %s." % nome_luogo(l), "tutti", {"tipo": "nucleo", "luogo": l})
+	_ev("Un nocciolo germoglia nel %s." % nome_luogo(l), "tutti", {"tipo": "nucleo", "luogo": l})
 
 func _sblocca() -> void:
 	var k: Dictionary = s["killer"]
@@ -1761,7 +1797,7 @@ func _passo_killer(dest: String, furtivo := false) -> bool:
 		var scelte: Array = []
 		if k["mano"].size() > 3:
 			var dc := await chiedi("K", {"tipo": "costo", "n": 3, "carta": "",
-				"titolo": "Il cancello: scegli 3 carte da scartare per sfondarlo"})
+				"titolo": "La saracinesca: scegli 3 carte da scartare per attraversarla"})
 			scelte = dc.get("carte", [])
 		var valide := []
 		for x in scelte:
@@ -1779,14 +1815,14 @@ func _passo_killer(dest: String, furtivo := false) -> bool:
 			k["scarti"].append(k["mano"][x])
 			k["mano"].remove_at(x)
 		s["cancello"] = ""
-		_ev("%s scarta 3 carte e sfonda il cancello!" % nome_k(), "tutti", {"tipo": "cancello_rotto"})
+		_ev("%s scarta 3 carte e attraversa la saracinesca e la rimuove!" % nome_k(), "tutti", {"tipo": "cancello_rotto"})
 	if bloccata(da, dest) and not furtivo:
 		s["blocchi"].erase(chiave_porta(da, dest))
 		tolto = true
 	if not vicini(da).has(dest) and passaggi_di(da).has(dest):
 		if not k["passaggio_turno"] and k["evoluzioni"].has("mimetismo"):
 			k["bonus_turno"] += 3
-			_ev("Mimetismo: +3 Forza fino a fine turno.", "K")
+			_ev("Camouflage: +3 Forza fino a fine turno.", "K")
 		k["passaggio_turno"] = true
 	k["pos"] = dest
 	if furtivo:
@@ -1864,12 +1900,14 @@ func _muovi_statua(j: int, nmin: int, nmax: int, titolo: String) -> void:
 ## Il Killer si sposta direttamente in un luogo (teletrasporto, anche furtivo).
 func _teletrasporto(dest: String, furtivo := false) -> void:
 	var k: Dictionary = s["killer"]
+	if not mappa["luoghi"].has(dest):
+		return
 	var da: String = k["pos"]
 	if furtivo:
 		if not k["furtivo"]:
 			k["vista"] = k["pos"]
 		k["furtivo"] = true
-		_ev("%s svanisce nell'ombra [FURTIVO]." % nome_k(), "tutti", {"tipo": "furtivo", "luogo": k["vista"]})
+		_ev("%s svanisce nell'ombra [OCCULTAMENTO]." % nome_k(), "tutti", {"tipo": "furtivo", "luogo": k["vista"]})
 		k["pos"] = dest
 		_ev("[furtivo] %s → %s" % [nome_luogo(da), nome_luogo(dest)], "K", {"tipo": "movimento_k", "da": da, "a": dest, "furtivo": true})
 	else:
@@ -1948,8 +1986,8 @@ func _furtivo(nmin: int, nmax: int, effetto_riappari: String) -> void:
 	k["furtivo"] = true
 	if effetto_riappari != "":
 		k["riappari"].append(effetto_riappari)
-	_ev("%s svanisce nell'ombra [FURTIVO]." % nome_k(), "tutti", {"tipo": "furtivo", "luogo": k["vista"]})
-	await _muovi_k(nmin, nmax, "[FURTIVO]", true)
+	_ev("%s svanisce nell'ombra [OCCULTAMENTO]." % nome_k(), "tutti", {"tipo": "furtivo", "luogo": k["vista"]})
+	await _muovi_k(nmin, nmax, "[OCCULTAMENTO]", true)
 
 func _riappari() -> void:
 	var k: Dictionary = s["killer"]
@@ -1991,7 +2029,7 @@ func _riappari() -> void:
 		_ev("Livello 2: +3 Forza per l'incontro alla ricomparsa.", "tutti")
 	if not qui.is_empty() and k["evoluzioni"].has("mimetismo"):
 		k["bonus_attacco"] += 3
-		_ev("Mimetismo: +3 Forza alla ricomparsa.", "tutti")
+		_ev("Camouflage: +3 Forza alla ricomparsa.", "tutti")
 	k["riappare_ora"] = true
 	await _cerca_k(true)
 	k["riappare_ora"] = false
@@ -2340,9 +2378,11 @@ func _effetto_espansioni(id: String) -> void:
 				_percepisci(ll, "i luoghi delle chiavi")
 		"udito":
 			# verso il rumore più vicino, al massimo 6 passi, poi [CERCA]
-			var rum: Array = s["rumori"]
+			var rum: Array = s["rumori"].duplicate()
+			if s["petardo"] != "" or rum.has(k["pos"]):
+				rum = [k["pos"]]
 			if rum.is_empty():
-				_ev("Udito iperacuto: nessun rumore da seguire.", "K")
+				_ev("Udito sopraffino: nessun rumore da seguire.", "K")
 			else:
 				var dist := _distanze_k(k["pos"])
 				var md := 99
@@ -2354,7 +2394,7 @@ func _effetto_espansioni(id: String) -> void:
 						vicini_r.append(l)
 				var meta: String = vicini_r[0]
 				if vicini_r.size() > 1:
-					meta = await _chiedi_luogo(vicini_r, "Udito iperacuto: quale rumore segui?", "udito")
+					meta = await _chiedi_luogo(vicini_r, "Udito sopraffino: quale rumore segui?", "udito")
 				var passi := 0
 				while k["pos"] != meta and passi < 6:
 					var nx := _passo_k_verso(k["pos"], meta)
@@ -2390,19 +2430,19 @@ func _effetto_espansioni(id: String) -> void:
 			if k["livello"] >= 4 and not k["incontro"]:
 				await _muovi_k(0, 1, "Livello 4")
 		"riarmo":
-			var dest := await _chiedi_luogo(mappa["luoghi"].keys(), "Trappole riarmate: in quale luogo vai [FURTIVO]?", "furtivo")
+			var dest := await _chiedi_luogo(mappa["luoghi"].keys(), "Riattivare le trappole: in quale luogo vai [OCCULTAMENTO]?", "furtivo")
 			_teletrasporto(dest, true)
 			var da_piazzare: Array = s["trappole_scattate"].duplicate()
 			s["trappole_scattate"].clear()
 			for t in da_piazzare:
 				var cand := []
 				for l in mappa["luoghi"]:
-					if not s["trappole_k"].has(l) and in_luogo(l).is_empty():
+					if not s["trappole_k"].has(l):
 						cand.append(l)
-				var l := await _chiedi_luogo(cand, "Dove riarmi la trappola «%s»?" % Dati.TRAPPOLE[t]["nome"], "trappola")
+				var l := await _chiedi_luogo(cand, "Dove riattivi la trappola «%s»?" % Dati.TRAPPOLE[t]["nome"], "trappola")
 				if l != "":
 					s["trappole_k"][l] = t
-					_ev("Una trappola viene riarmata nel %s." % nome_luogo(l), "tutti", {"tipo": "trappola_piazzata", "luogo": l})
+					_ev("Una trappola viene riattivata nel %s." % nome_luogo(l), "tutti", {"tipo": "trappola_piazzata", "luogo": l})
 		# ---------------- Regina
 		"esplosione":
 			var luoghi_z := []
@@ -2473,7 +2513,7 @@ func _effetto_espansioni(id: String) -> void:
 					tutte.append(p)
 			if tutte.is_empty():
 				return
-			var d := await chiedi("K", {"tipo": "porta", "porte": tutte, "titolo": "Evocazione della stele: [BLOCCA] una porta qualsiasi"})
+			var d := await chiedi("K", {"tipo": "porta", "porte": tutte, "titolo": "Evocare la stele: [BLOCCA] una porta qualsiasi"})
 			var pt: String = d.get("porta", "")
 			if not tutte.has(pt):
 				pt = tutte[0]
@@ -2489,9 +2529,9 @@ func _effetto_espansioni(id: String) -> void:
 				await _paura(i, nome_k())
 		"riposiziona":
 			await _pesca_in_mano(1)
-			await _scegli_principale("Riposizionamento: quale Statua è la principale?")
+			await _scegli_principale("Riposizionarsi: quale Statua è la principale?")
 			if not s["blocchi"].is_empty():
-				var d := await chiedi("K", {"tipo": "si_no", "titolo": "Riposizionamento: vuoi spostare un blocco?", "scopo": "sposta_blocco"})
+				var d := await chiedi("K", {"tipo": "si_no", "titolo": "Riposizionarsi: vuoi spostare un blocco?", "scopo": "sposta_blocco"})
 				if d.get("si", false):
 					var d2 := await chiedi("K", {"tipo": "porta", "porte": s["blocchi"].duplicate(), "titolo": "Quale blocco sposti?"})
 					var via: String = d2.get("porta", s["blocchi"][0])
@@ -2514,7 +2554,7 @@ func _effetto_espansioni(id: String) -> void:
 			for j in s["statue"].size():
 				if s["vincitore"] != "":
 					return
-				await _muovi_statua(j, 0, 1, "Pattuglia")
+				await _muovi_statua(j, 0, 1, "Pattugliare")
 		"scatenate":
 			var z := zona(k["pos"])
 			var colpiti := []
@@ -2527,14 +2567,14 @@ func _effetto_espansioni(id: String) -> void:
 				await _paura(i, nome_k())
 			if s["vincitore"] != "":
 				return
-			await _muovi_statua(k["principale"], 0, 2, "Scatenate")
+			await _muovi_statua(k["principale"], 0, 2, "Scatenarsi")
 			if s["statue"][k["principale"]]["gelo"] <= 0:
 				await _cerca_luogo(s["statue"][k["principale"]]["pos"], "Una Statua")
 		"accerchiamento":
 			for j in s["statue"].size():
 				if s["vincitore"] != "":
 					return
-				await _muovi_statua(j, 0, 2, "Accerchiamento")
+				await _muovi_statua(j, 0, 2, "Accerchiare")
 			var fatte := []
 			while fatte.size() < s["statue"].size() and s["vincitore"] == "":
 				var opz := []
@@ -2543,7 +2583,7 @@ func _effetto_espansioni(id: String) -> void:
 					if not fatte.has(j):
 						idx.append(j)
 						opz.append("Statua %s (%s)" % [s["statue"][j]["nome"], nome_luogo(s["statue"][j]["pos"])])
-				var d := await chiedi("K", {"tipo": "scelta", "opzioni": opz, "scopo": "statua_cerca", "titolo": "Accerchiamento: quale Statua cerca ora?"})
+				var d := await chiedi("K", {"tipo": "scelta", "opzioni": opz, "scopo": "statua_cerca", "titolo": "Accerchiare: quale Statua cerca ora?"})
 				var j: int = idx[clampi(int(d.get("n", 0)), 0, idx.size() - 1)]
 				fatte.append(j)
 				if s["statue"][j]["gelo"] <= 0:
@@ -2560,7 +2600,7 @@ func _effetto_espansioni(id: String) -> void:
 						porte.append(p)
 			if porte.is_empty():
 				return
-			var d := await chiedi("K", {"tipo": "porta", "porte": porte, "titolo": "Crescita dei rampicanti: [BLOCCA] una porta di un luogo con un nucleo"})
+			var d := await chiedi("K", {"tipo": "porta", "porte": porte, "titolo": "Crescita dei viticci: [BLOCCA] una porta di un luogo con un nocciolo"})
 			var pt: String = d.get("porta", "")
 			if not porte.has(pt):
 				pt = porte[0]
@@ -2569,7 +2609,7 @@ func _effetto_espansioni(id: String) -> void:
 			_metti_nucleo(k["pos"])
 			await _blocca_qui(1)
 		"telesintesi":
-			var d := await chiedi("K", {"tipo": "scelta", "opzioni": ["Teletrasportati in un luogo con un nucleo o un blocco", "Sposta un nucleo in un luogo adiacente"],
+			var d := await chiedi("K", {"tipo": "scelta", "opzioni": ["Teletrasportati in un luogo con un nocciolo o un blocco", "Sposta un nucleo in un luogo adiacente"],
 				"scopo": "telesintesi", "titolo": "Telesintesi: cosa fai?"})
 			if int(d.get("n", 0)) == 0:
 				var cand := []
@@ -2588,11 +2628,11 @@ func _effetto_espansioni(id: String) -> void:
 				for l in s["nuclei"]:
 					if not cand.has(l):
 						cand.append(l)
-				var da := await _chiedi_luogo(cand, "Telesintesi: quale nucleo sposti?", "nucleo_scelta")
+				var da := await _chiedi_luogo(cand, "Telesintesi: quale nocciolo sposti?", "nucleo_scelta")
 				var dest := await _chiedi_luogo(vicini(da), "Telesintesi: dove lo sposti?", "nucleo")
 				s["nuclei"].erase(da)
 				s["nuclei"].append(dest)
-				_ev("Un nucleo si sposta: %s → %s." % [nome_luogo(da), nome_luogo(dest)], "tutti", {"tipo": "nucleo", "luogo": dest})
+				_ev("Un nocciolo si sposta: %s → %s." % [nome_luogo(da), nome_luogo(dest)], "tutti", {"tipo": "nucleo", "luogo": dest})
 		"avvinghiare":
 			await _cerca_k()
 		"frenesia":
@@ -2603,7 +2643,7 @@ func _effetto_espansioni(id: String) -> void:
 			for i in vivi():
 				var l: String = s["sopr"][i]["pos"]
 				if s["nuclei"].has(l) or not passaggi_di(l).is_empty():
-					await _danno(i, "i rampicanti")
+					await _danno(i, "i viticci")
 					if s["vincitore"] != "":
 						return
 		# ---------------- Non Identificato
@@ -2614,17 +2654,17 @@ func _effetto_espansioni(id: String) -> void:
 				await _muovi_k(1, 1, "Strisciare")
 		"cunicolo":
 			if k["evoluzioni"].has("mimetismo"):
-				var dest := await _chiedi_luogo(mappa["luoghi"].keys(), "Cunicolo: [FURTIVO] in un luogo qualsiasi", "furtivo")
+				var dest := await _chiedi_luogo(mappa["luoghi"].keys(), "Tunnel: [OCCULTAMENTO] in un luogo qualsiasi", "furtivo")
 				_teletrasporto(dest, true)
 			else:
-				var d := await chiedi("K", {"tipo": "scelta", "opzioni": ["[FURTIVO] x0-1", "[FURTIVO] in un luogo con un passaggio segreto"],
-					"scopo": "cunicolo", "titolo": "Cunicolo inquietante: cosa fai?"})
-				if int(d.get("n", 0)) == 1:
-					var cand := []
-					for l in mappa["luoghi"]:
-						if not passaggi_di(l).is_empty():
-							cand.append(l)
-					var dest := await _chiedi_luogo(cand, "Cunicolo: in quale luogo con un passaggio segreto?", "furtivo")
+				var d := await chiedi("K", {"tipo": "scelta", "opzioni": ["[OCCULTAMENTO] x0-1", "[OCCULTAMENTO] in un luogo con un passaggio segreto"],
+					"scopo": "cunicolo", "titolo": "Tunnel inquietante: cosa fai?"})
+				var cand := []
+				for l in mappa["luoghi"]:
+					if not passaggi_di(l).is_empty():
+						cand.append(l)
+				if int(d.get("n", 0)) == 1 and not cand.is_empty():
+					var dest := await _chiedi_luogo(cand, "Tunnel: in quale luogo con un passaggio segreto?", "furtivo")
 					_teletrasporto(dest, true)
 				else:
 					await _furtivo(0, 1, "")
@@ -2646,13 +2686,13 @@ func _effetto_espansioni(id: String) -> void:
 		"stridio":
 			await _paura_raggio(3)
 			if s["vincitore"] == "":
-				var d := await chiedi("K", {"tipo": "si_no", "scopo": "cima", "titolo": "Rimetti «Rumore stridente» in cima al tuo mazzo?"})
+				var d := await chiedi("K", {"tipo": "si_no", "scopo": "cima", "titolo": "Rimetti «Suono stridente» in cima al tuo mazzo?"})
 				k["cima"] = d.get("si", false)
 		"acido":
 			var adj := vicini(k["pos"])
-			var l2 := await _chiedi_luogo(adj, "Sputo acido: quale luogo adiacente colpisci?", "acido")
+			var l2 := await _chiedi_luogo(adj, "Rigurgito acido: quale luogo adiacente colpisci?", "acido")
 			for i in in_luogo(k["pos"]) + in_luogo(l2):
-				await _danno(i, "lo Sputo acido")
+				await _danno(i, "lo Rigurgito acido")
 				if s["vincitore"] != "":
 					return
 			var pt := chiave_porta(k["pos"], l2)

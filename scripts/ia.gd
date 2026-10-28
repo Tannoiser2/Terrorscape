@@ -504,6 +504,12 @@ func _scegli_opzione_k(req: Dictionary, h: Dictionary, _obj: String) -> int:
 			return 0
 		"ultima":
 			return 1
+		"tipo_trappola":
+			var chiavi: Array = req.get("chiavi", [])
+			var l: String = req.get("luogo", "")
+			if l != "" and p.mappa["luoghi"][l].get("radio", false) and chiavi.has("tagliola"):
+				return chiavi.find("tagliola")
+			return rng.randi_range(0, chiavi.size() - 1)
 		"rimuovi":
 			var ids: Array = req.get("carte_id", [])
 			var peggio := 0
@@ -900,6 +906,10 @@ func _azione_s() -> Dictionary:
 			return {"a": "ripara", "i": i}
 		if poss.has("cerca") and danger < 0.75 and ruoli.get(i, "") != "radio":
 			return {"a": "cerca", "i": i}
+		if poss.has("armadietto"):
+			for j in poss["armadietto"]:
+				if p.s["sopr"][j]["ferite"] > 0 or p.s["sopr"][j]["paura"] >= 2:
+					return {"a": "armadietto", "i": i, "bersaglio": j}
 		if poss.has("apri_reliquie") and danger < 0.75:
 			return {"a": "apri_reliquie", "i": i}
 		if poss.has("cerca_reliquie") and danger < 0.75:

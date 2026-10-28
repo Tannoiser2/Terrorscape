@@ -1066,7 +1066,7 @@ func _pannello_killer_pubblico() -> void:
 		var ll := []
 		for j in s["statue"].size():
 			var stt: Dictionary = s["statue"][j]
-			ll.append("%s: %s%s%s" % [stt["nome"], stt["pos"], " ★" if modo == "osserva" and j == k["principale"] else "", " (congelata)" if stt["gelo"] > 0 else ""])
+			ll.append("%s: %s%s%s" % [stt["nome"], stt["pos"], " ★" if modo == "osserva" and j == k["principale"] else "", " (immobile)" if stt["gelo"] > 0 else ""])
 		dove = "Statue — " + ", ".join(ll)
 	var esp := _stato_espansione(false)
 	if esp != "":
@@ -1109,7 +1109,7 @@ func _pannello_killer() -> void:
 		var ll := []
 		for j in s["statue"].size():
 			var stt: Dictionary = s["statue"][j]
-			ll.append("%s%s: %s%s" % [stt["nome"], " ★" if j == k["principale"] else "", stt["pos"], " (congelata)" if stt["gelo"] > 0 else ""])
+			ll.append("%s%s: %s%s" % [stt["nome"], " ★" if j == k["principale"] else "", stt["pos"], " (immobile)" if stt["gelo"] > 0 else ""])
 		dove_k = "Statue — " + ", ".join(ll)
 	rt.text = "Livello [color=#c9a24a]%d[/color] · Forza [color=#e0262f]%d[/color] · Mazzo %d · Scarti %d%s\n%s" % [k["livello"], partita.forza(),
 		k["mazzo"].size(), k["scarti"].size(), "" if k["bloccata"] == "" else " · bloccata: «%s»" % Dati.CARTE_KILLER[k["bloccata"]]["nome"],
@@ -1170,7 +1170,7 @@ func _stato_espansione(per_killer: bool) -> String:
 	if not s["zombi"].is_empty() or k["id"] == "regina":
 		r.append("[color=#9fe070]Zombi[/color] %d/6" % s["zombi"].size())
 	if not s["nuclei"].is_empty() or k["id"] == "strangolatore":
-		r.append("[color=#9fe070]Nuclei[/color] %d/5" % s["nuclei"].size())
+		r.append("[color=#9fe070]Noccioli[/color] %d/5" % s["nuclei"].size())
 	if k["id"] == "cacciatrice":
 		r.append("[color=#8fb0ff]Trappole[/color] %d armate, %d scattate" % [s["trappole_k"].size(), s["trappole_scattate"].size()])
 		if per_killer:
@@ -1180,7 +1180,7 @@ func _stato_espansione(per_killer: bool) -> String:
 			if not ll.is_empty():
 				r.append("[color=#aaa]" + ", ".join(ll) + "[/color]")
 	if k["id"] == "lupo":
-		r.append("[color=#d0b060]Forzieri[/color] %d" % s["forzieri"].size())
+		r.append("[color=#d0b060]Scrigni[/color] %d" % s["forzieri"].size())
 	if not k["evoluzioni"].is_empty():
 		var ee := []
 		for e in k["evoluzioni"]:
@@ -1296,7 +1296,7 @@ func _bottoni_azioni(i: int, box: Control) -> void:
 	if poss.has("valigia"):
 		aggiungi.call("Fruga nella valigia", func(): _decidi({"a": "valigia", "i": i}), Color(0.15, 0.25, 0.12), "Azione extra: pesca 1 carta dal mazzo scoperta")
 	if poss.has("leva"):
-		aggiungi.call("Aziona le leve", func(): _scegli_cancello(i), Color(0.3, 0.2, 0.1), "Azione extra: metti il cancello su una porta")
+		aggiungi.call("Aziona la leva", func(): _scegli_cancello(i), Color(0.3, 0.2, 0.1), "Azione extra: metti la saracinesca su una porta")
 	if poss.has("risorse"):
 		for o in poss["risorse"]:
 			aggiungi.call("Prendi %s" % Dati.OGGETTI[o]["nome"], func(): _decidi({"a": "risorse", "i": i, "ogg": o}), Color(0.15, 0.2, 0.3))
@@ -1309,10 +1309,14 @@ func _bottoni_azioni(i: int, box: Control) -> void:
 	if poss.has("meccanica"):
 		aggiungi.call("Prendi una cassetta", func(): _decidi({"a": "meccanica", "i": i}), Color(0.15, 0.2, 0.3))
 	if poss.has("congela"):
-		aggiungi.call("Congela la Statua", func(): _decidi({"a": "congela", "i": i}), Color(0.12, 0.25, 0.35),
-			"Azione speciale: la Statua sola nel tuo luogo non può muoversi né cercare fino alla fine del prossimo turno del Killer. Poi niente azioni extra.")
+		aggiungi.call("Immobilizza la Statua", func(): _decidi({"a": "congela", "i": i}), Color(0.12, 0.25, 0.35),
+			"Azione speciale: la Statua, se è l'unica nel tuo luogo, non può muoversi né cercare fino alla fine del turno del Killer. Poi in questo turno niente altre azioni, neanche extra.")
+	if poss.has("armadietto"):
+		for j in poss["armadietto"]:
+			aggiungi.call("Armadietto: cura %s" % partita.nome_s(j), func(): _decidi({"a": "armadietto", "i": i, "bersaglio": j}), Color(0.15, 0.25, 0.12),
+				"Azione speciale: [GUARIRE] e togli tutta la paura; poi l'armadietto sparisce")
 	if poss.has("nucleo"):
-		aggiungi.call("Strappa il nucleo", func(): _decidi({"a": "nucleo", "i": i}), Color(0.15, 0.3, 0.1), "Azione speciale: togli un nucleo dal tuo luogo")
+		aggiungi.call("Strappa il nocciolo", func(): _decidi({"a": "nucleo", "i": i}), Color(0.15, 0.3, 0.1), "Azione speciale: togli un nocciolo dal tuo luogo")
 	if poss.has("apri_reliquie"):
 		aggiungi.call("Apri la Camera delle reliquie", func(): _decidi({"a": "apri_reliquie", "i": i}), Color(0.15, 0.25, 0.12), "Azione speciale: rompi il sigillo (fa rumore)")
 	if poss.has("cerca_reliquie"):
@@ -1321,7 +1325,7 @@ func _bottoni_azioni(i: int, box: Control) -> void:
 		aggiungi.call("Fai crollare il corridoio", func(): _decidi({"a": "crollo", "i": i}), Color(0.3, 0.2, 0.1),
 			"Azione speciale (una volta per partita): il Killer non potrà più entrare in questo luogo")
 	if poss.has("forziere"):
-		aggiungi.call("Apri il forziere", func(): _decidi({"a": "forziere", "i": i}), Color(0.3, 0.25, 0.1), "Azione extra: pesca un'arma d'argento")
+		aggiungi.call("Apri lo scrigno", func(): _decidi({"a": "forziere", "i": i}), Color(0.3, 0.25, 0.1), "Azione extra: pesca un'arma d'argento")
 	if poss.has("usa"):
 		for k in poss["usa"]:
 			var o: String = sp["oggetti"][k]
@@ -1337,7 +1341,7 @@ func _scegli_cancello(i: int) -> void:
 		if c[2] == "porta":
 			porte.append(Partita.chiave_porta(c[0], c[1]))
 	plancia.mostra_scelta([], porte)
-	richiesta_titolo.text = "Le leve: clicca la porta dove far calare il cancello"
+	richiesta_titolo.text = "La leva: clicca la porta dove far calare la saracinesca"
 	_bottoni_annulla()
 
 func _scegli_scambio(i: int, compagni: Array) -> void:
