@@ -9,8 +9,8 @@ var turni_tot := 0
 func _initialize() -> void:
 	var args := OS.get_cmdline_user_args()
 	var n := int(args[0]) if args.size() > 0 else 20
-	var killers := ["macellaio", "spettro", "assassino"]
-	if args.size() > 1:
+	var killers: Array = Dati.KILLER.keys()
+	if args.size() > 1 and args[1] != "tutti":
 		killers = [args[1]]
 	var tutti_s := Dati.SOPRAVVISSUTI.keys()
 	for g in n:
@@ -24,8 +24,8 @@ func _initialize() -> void:
 		for k in 3:
 			scelti.append(pool.pop_at(rr.randi_range(0, pool.size() - 1)))
 		var killer: String = killers[g % killers.size()]
-		var mappe := ["villa", "baita", "castello"]
-		var mp: String = mappe[(g / 3) % 3] if args.size() < 3 else args[2]
+		var mappe := ["villa", "baita", "castello", "tomba"]
+		var mp: String = mappe[(g / killers.size()) % 4] if args.size() < 3 else args[2]
 		p.prepara({"mappa": mp, "killer": killer, "sopravvissuti": scelti, "seme": g + 1})
 		var ia_k := IA.new(p, "K", g + 100)
 		var ia_s := IA.new(p, "S", g + 200)

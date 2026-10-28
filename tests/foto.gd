@@ -29,6 +29,16 @@ func _initialize() -> void:
 		await _foto("mappa_" + mp)
 		quit()
 		return
+	if scen.begins_with("oss:") or scen.begins_with("k:") or scen.begins_with("s:"):
+		var pz := scen.split(":")
+		var ruolo: String = {"oss": "O", "k": "K", "s": "S"}[pz[0]]
+		main._prep = {"ruolo": ruolo, "killer": pz[1], "sopr": ["caleb", "ophelia", "william"], "mappa": pz[2]}
+		main.velocita = 0.15
+		main._avvia_locale()
+		await _attendi(float(pz[3]))
+		await _foto("%s_%s_%s" % [pz[0], pz[1], pz[2]])
+		quit()
+		return
 	match scen:
 		"menu":
 			await _foto("menu")

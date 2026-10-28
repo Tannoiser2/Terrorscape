@@ -342,10 +342,15 @@ func _testo_regole() -> String:
 	for k in Dati.KILLER:
 		var kd: Dictionary = Dati.KILLER[k]
 		t += "• [b]%s[/b] (Forza %d): %s\n" % [kd["nome"], kd["forza"], kd["descrizione"]]
+		if kd.has("regole"):
+			t += "   [color=#bbb]%s[/color]\n" % kd["regole"]
 	t += "\n[b]I Sopravvissuti[/b]\n"
 	for s in Dati.SOPRAVVISSUTI:
 		var sd: Dictionary = Dati.SOPRAVVISSUTI[s]
 		t += "• [b]%s[/b], %s — %s: %s %s: %s\n" % [sd["nome"], sd["ruolo"], sd["abilita"][0][0], sd["abilita"][0][1], sd["abilita"][1][0], sd["abilita"][1][1]]
+	t += "\n[b]Le mappe[/b]\n"
+	for m in Dati.MAPPE:
+		t += "• [b]%s[/b]: %s\n" % [Dati.MAPPE[m]["nome"], Dati.MAPPE[m]["speciale"]]
 	t += "\n[b]Comandi[/b]: clic sui luoghi della plancia per muovere; tasto destro (o due dita) per ruotare la vista, rotella per avvicinarsi. Passa sopra una carta per leggerla."
 	return t
 
@@ -476,8 +481,10 @@ func _scheda_killer(k: String, online: bool) -> Control:
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(v)
 	v.add_child(_etichetta(kd["nome"], 26, SANGUE_VIVO if scelto else OSSO, F_SC))
-	v.add_child(_etichetta("Forza %d" % kd["forza"], 17, ORO))
+	v.add_child(_etichetta("Forza %d%s" % [kd["forza"], "  ·  espansione" if kd.get("espansione", false) else ""], 17, ORO))
 	v.add_child(_etichetta(kd["descrizione"], 16))
+	if kd.has("regole"):
+		pc.tooltip_text = kd["regole"]
 	var b := _bottone_piccolo("Scelto" if scelto else "Scegli")
 	b.disabled = scelto
 	b.pressed.connect(func(): _prep["killer"] = k; _preparazione(online))
@@ -610,7 +617,7 @@ func _su_evento(e: Dictionary) -> void:
 		"incontro":
 			for i in e["trovati"]:
 				plancia.annota(int(i), e["luogo"])
-		"rivelato", "trabocca", "morte":
+		"rivelato", "trabocca", "morte", "trappola_scattata":
 			plancia.annota(int(e["i"]), e["luogo"])
 		"percepisci":
 			if e["luoghi"].size() <= 2:
@@ -627,6 +634,8 @@ func _su_evento(e: Dictionary) -> void:
 			col = "#c9a24a"
 		"incontro", "morte", "ferita", "difesa_ko", "fine":
 			col = "#ff4a4a"
+		"trappola_scattata", "veleno", "zombi", "nucleo":
+			col = "#9fe070"
 		"difesa_ok", "cura", "radio", "chiave":
 			col = "#7fdc8a"
 		"paura", "trabocca", "paura_raggio":
@@ -658,6 +667,14 @@ func _su_evento(e: Dictionary) -> void:
 			_toast(testo, Color("#ff5050") if e["tipo"] != "radio" else VERDE)
 		"chiave":
 			_toast(testo, VERDE)
+		"trappola_scattata", "crollo", "evoluzione", "gelo":
+			_toast(testo, Color("#8fb0ff"))
+		"veleno":
+			_toast(testo, Color("#9fe070"))
+		"zombi":
+			plancia.lampeggia([e["luogo"]], Color(0.4, 0.8, 0.2))
+		"distanza":
+			plancia.lampeggia(partita.mappa["luoghi"].keys().filter(func(x): return partita.distanza(e["centro"], x) == int(e["d"])), Color(0.9, 0.6, 0.2), 3.0)
 		"carta":
 			if mio_lato == "S" or modo == "osserva":
 				_toast_carta(e)
@@ -994,6 +1011,10 @@ func _pannello_sopr() -> void:
 			extra += "  [color=#c9a24a]Tempra[/color]"
 		if sp["incoraggiamento"]:
 			extra += "  [color=#7fdc8a]Incoraggiato[/color]"
+		if sp.get("veleno", false):
+			extra += "  [color=#9fe070]Avvelenato[/color]"
+		if sp.get("intrappolato", false):
+			extra += "  [color=#c0c0c0]Nella rete[/color]"
 		rt.text = "%s   %s   [color=#aaa]%s[/color]%s%s" % [_cuori(sp["ferite"], sp["vivo"]), _paure(sp["paura"]), partita.nome_luogo(sp["pos"]),
 			"  [color=#7fdc8a]✓ ha agito[/color]" if sp["agito"] and s["fase"] == "S" else "", extra]
 		info.add_child(rt)
@@ -1041,6 +1062,15 @@ func _pannello_killer_pubblico() -> void:
 	var dove := "furtivo (sparito nel %s)" % partita.nome_luogo(k["vista"]) if k["furtivo"] else partita.nome_luogo(k["pos"])
 	if modo == "osserva":
 		dove = partita.nome_luogo(k["pos"]) + (" (furtivo)" if k["furtivo"] else "")
+	if k["id"] == "statue":
+		var ll := []
+		for j in s["statue"].size():
+			var stt: Dictionary = s["statue"][j]
+			ll.append("%s: %s%s%s" % [stt["nome"], stt["pos"], " ★" if modo == "osserva" and j == k["principale"] else "", " (congelata)" if stt["gelo"] > 0 else ""])
+		dove = "Statue — " + ", ".join(ll)
+	var esp := _stato_espansione(false)
+	if esp != "":
+		dove += "\n" + esp
 	var rt := RichTextLabel.new()
 	rt.bbcode_enabled = true
 	rt.fit_content = true
@@ -1049,6 +1079,7 @@ func _pannello_killer_pubblico() -> void:
 	v.add_child(rt)
 	var lv := _etichetta("Prossimo livello: " + (kd["livelli"][k["livello"]] if k["livello"] < 5 else "massimo raggiunto"), 14, Color(0.8, 0.7, 0.6))
 	v.add_child(lv)
+	_bottoni_info_killer(v, kd)
 	if modo == "osserva":
 		var hm := HFlowContainer.new()
 		hm.add_child(_spaziatore())
@@ -1073,10 +1104,26 @@ func _pannello_killer() -> void:
 	rt.bbcode_enabled = true
 	rt.fit_content = true
 	rt.add_theme_font_size_override("normal_font_size", 18)
-	rt.text = "Livello [color=#c9a24a]%d[/color] · Forza [color=#e0262f]%d[/color] · Mazzo %d · Scarti %d%s\nSei nel %s%s" % [k["livello"], partita.forza(),
+	var dove_k := "Sei nel %s%s" % [partita.nome_luogo(k["pos"]), " [color=#b070f0](furtivo)[/color]" if k["furtivo"] else ""]
+	if k["id"] == "statue":
+		var ll := []
+		for j in s["statue"].size():
+			var stt: Dictionary = s["statue"][j]
+			ll.append("%s%s: %s%s" % [stt["nome"], " ★" if j == k["principale"] else "", stt["pos"], " (congelata)" if stt["gelo"] > 0 else ""])
+		dove_k = "Statue — " + ", ".join(ll)
+	rt.text = "Livello [color=#c9a24a]%d[/color] · Forza [color=#e0262f]%d[/color] · Mazzo %d · Scarti %d%s\n%s" % [k["livello"], partita.forza(),
 		k["mazzo"].size(), k["scarti"].size(), "" if k["bloccata"] == "" else " · bloccata: «%s»" % Dati.CARTE_KILLER[k["bloccata"]]["nome"],
-		partita.nome_luogo(k["pos"]), " [color=#b070f0](furtivo)[/color]" if k["furtivo"] else ""]
+		dove_k]
 	v.add_child(rt)
+	var esp := _stato_espansione(true)
+	if esp != "":
+		var re := RichTextLabel.new()
+		re.bbcode_enabled = true
+		re.fit_content = true
+		re.add_theme_font_size_override("normal_font_size", 16)
+		re.text = esp
+		v.add_child(re)
+	_bottoni_info_killer(v, kd)
 	v.add_child(_etichetta("La tua mano", 19, ORO, F_SC))
 	var hm := HFlowContainer.new()
 	hm.add_child(_spaziatore())
@@ -1114,6 +1161,61 @@ func _pannello_killer() -> void:
 		_zoomabile(b, path, _testo_carta_k(c))
 	if k["mano"].is_empty():
 		v.add_child(_riga("(nessuna carta)", 16))
+
+## Riepilogo degli elementi delle espansioni (zombi, nuclei, trappole, forzieri, evoluzioni...).
+func _stato_espansione(per_killer: bool) -> String:
+	var s: Dictionary = partita.s
+	var k: Dictionary = s["killer"]
+	var r := []
+	if not s["zombi"].is_empty() or k["id"] == "regina":
+		r.append("[color=#9fe070]Zombi[/color] %d/6" % s["zombi"].size())
+	if not s["nuclei"].is_empty() or k["id"] == "strangolatore":
+		r.append("[color=#9fe070]Nuclei[/color] %d/5" % s["nuclei"].size())
+	if k["id"] == "cacciatrice":
+		r.append("[color=#8fb0ff]Trappole[/color] %d armate, %d scattate" % [s["trappole_k"].size(), s["trappole_scattate"].size()])
+		if per_killer:
+			var ll := []
+			for l in s["trappole_k"]:
+				ll.append("%s (%s)" % [l, Dati.TRAPPOLE[s["trappole_k"][l]]["nome"]])
+			if not ll.is_empty():
+				r.append("[color=#aaa]" + ", ".join(ll) + "[/color]")
+	if k["id"] == "lupo":
+		r.append("[color=#d0b060]Forzieri[/color] %d" % s["forzieri"].size())
+	if not k["evoluzioni"].is_empty():
+		var ee := []
+		for e in k["evoluzioni"]:
+			ee.append(Dati.EVOLUZIONI[e]["nome"])
+		r.append("[color=#d08cff]Evoluzioni:[/color] " + ", ".join(ee))
+	if int(k["forza_perm"]) > 0:
+		r.append("Forza permanente +%d" % k["forza_perm"])
+	if s["turno"] <= int(k["bonus_esteso_fino"]) and int(k["bonus_esteso"]) > 0:
+		r.append("+%d Forza fino al turno %d" % [k["bonus_esteso"], k["bonus_esteso_fino"]])
+	if s["crollo_k"] != "":
+		r.append("Crollo del Killer: %s" % s["crollo_k"])
+	if s["crollo_s"] != "":
+		r.append("Crollo dei Sopravvissuti: %s" % s["crollo_s"])
+	for l in partita.mappa["luoghi"]:
+		if partita.mappa["luoghi"][l].get("reliquie", false):
+			r.append("Reliquie: %s" % ("aperte (%d carte)" % s["reliquie"].size() if s["reliquie_aperte"] else "sigillate"))
+	return " · ".join(r)
+
+## Bottoni per vedere le regole speciali e le evoluzioni del Killer.
+func _bottoni_info_killer(v: Control, kd: Dictionary) -> void:
+	var k: Dictionary = partita.s["killer"]
+	var riga := HFlowContainer.new()
+	riga.add_child(_spaziatore())
+	riga.add_theme_constant_override("h_separation", 6)
+	v.add_child(riga)
+	if kd.has("regole"):
+		var b := _bottone_piccolo("Regole speciali", Color(0.2, 0.1, 0.12))
+		var path: String = kd["info"][0] if not kd.get("info", []).is_empty() else kd["plancia"]
+		b.pressed.connect(func(): _mostra_zoom(path, "[font_size=22][color=#e0262f]%s[/color][/font_size]\n%s" % [kd["nome"], kd["regole"]]))
+		riga.add_child(b)
+	for e in k["evoluzioni"]:
+		var ed: Dictionary = Dati.EVOLUZIONI[e]
+		var b2 := _bottone_piccolo(ed["nome"], Color(0.2, 0.1, 0.25))
+		b2.pressed.connect(func(): _mostra_zoom(ed["img"], "[font_size=22][color=#d08cff]%s[/color][/font_size]\n%s" % [ed["nome"], ed["testo"]]))
+		riga.add_child(b2)
 
 func _livelli_testo(k: Dictionary) -> String:
 	var kd: Dictionary = Dati.KILLER[k["id"]]
@@ -1206,6 +1308,20 @@ func _bottoni_azioni(i: int, box: Control) -> void:
 			aggiungi.call("Incoraggia %s" % partita.nome_s(j), func(): _decidi({"a": "incoraggia", "i": i, "bersaglio": j}), Color(0.15, 0.25, 0.12))
 	if poss.has("meccanica"):
 		aggiungi.call("Prendi una cassetta", func(): _decidi({"a": "meccanica", "i": i}), Color(0.15, 0.2, 0.3))
+	if poss.has("congela"):
+		aggiungi.call("Congela la Statua", func(): _decidi({"a": "congela", "i": i}), Color(0.12, 0.25, 0.35),
+			"Azione speciale: la Statua sola nel tuo luogo non può muoversi né cercare fino alla fine del prossimo turno del Killer. Poi niente azioni extra.")
+	if poss.has("nucleo"):
+		aggiungi.call("Strappa il nucleo", func(): _decidi({"a": "nucleo", "i": i}), Color(0.15, 0.3, 0.1), "Azione speciale: togli un nucleo dal tuo luogo")
+	if poss.has("apri_reliquie"):
+		aggiungi.call("Apri la Camera delle reliquie", func(): _decidi({"a": "apri_reliquie", "i": i}), Color(0.15, 0.25, 0.12), "Azione speciale: rompi il sigillo (fa rumore)")
+	if poss.has("cerca_reliquie"):
+		aggiungi.call("Cerca tra le reliquie", func(): _decidi({"a": "cerca_reliquie", "i": i}), Color(0.15, 0.25, 0.12), "Pesca dal mazzo delle reliquie")
+	if poss.has("crollo"):
+		aggiungi.call("Fai crollare il corridoio", func(): _decidi({"a": "crollo", "i": i}), Color(0.3, 0.2, 0.1),
+			"Azione speciale (una volta per partita): il Killer non potrà più entrare in questo luogo")
+	if poss.has("forziere"):
+		aggiungi.call("Apri il forziere", func(): _decidi({"a": "forziere", "i": i}), Color(0.3, 0.25, 0.1), "Azione extra: pesca un'arma d'argento")
 	if poss.has("usa"):
 		for k in poss["usa"]:
 			var o: String = sp["oggetti"][k]
@@ -1297,7 +1413,7 @@ func _usa_oggetto(i: int, k: int) -> void:
 			var cand := []
 			for j in partita.in_luogo(sp["pos"]):
 				var q: Dictionary = partita.s["sopr"][j]
-				if (o == "erbe" and q["ferite"] > 0) or (o == "tranquillante" and q["paura"] > 0) or (o == "kit_medico" and (q["ferite"] > 0 or q["paura"] > 0)):
+				if (o == "erbe" and partita.ha_bisogno_cura(j)) or (o == "tranquillante" and q["paura"] > 0) or (o == "kit_medico" and (partita.ha_bisogno_cura(j) or q["paura"] > 0)):
 					cand.append(j)
 			if cand.size() <= 1:
 				_decidi({"a": "usa", "i": i, "ogg": k, "bersaglio": cand[0] if not cand.is_empty() else i})
@@ -1376,7 +1492,7 @@ func _mostra_richiesta() -> void:
 					manca.append(partita.nome_s(i))
 			if not manca.is_empty():
 				richiesta_corpo.add_child(_riga("Non hanno ancora agito: " + ", ".join(manca), 17, Color(0.85, 0.75, 0.6)))
-		"scoperta_chi", "difensore", "bersaglio_paura":
+		"scoperta_chi", "difensore", "bersaglio_paura", "sopravvissuto":
 			var cand: Array = req.get("candidati", partita.vivi())
 			for i in cand:
 				var sp: Dictionary = s["sopr"][i]
@@ -1429,7 +1545,7 @@ func _mostra_richiesta() -> void:
 			richiesta_titolo.text += "  (tiri %d dadi)" % maxi(0, 4 - sp["paura"])
 			for o in req["opzioni"]:
 				var b := _bottone("%s (+%d)" % [o["nome"], o["bonus"]], Color(0.2, 0.18, 0.08), 18)
-				b.pressed.connect(func(): _decidi({"ogg": o["ogg"], "munizioni": o.get("munizioni", false)}))
+				b.pressed.connect(func(): _decidi({"ogg": o["ogg"], "ogg2": o.get("ogg2", -1), "munizioni": o.get("munizioni", false)}))
 				richiesta_corpo.add_child(b)
 			var no := _bottone("Nessun oggetto: tira i dadi", SANGUE, 18)
 			no.pressed.connect(func(): _decidi({"ogg": -1}))
@@ -1474,10 +1590,15 @@ func _mostra_richiesta() -> void:
 		"azione_k":
 			plancia.mostra_scelta(req["vicini"])
 			sel_azione = "azione_k"
-			var b := _bottone("[CERCA] nel %s" % partita.nome_luogo(k["pos"]), SANGUE, 19)
+			var b := _bottone("[CERCA] nel %s" % partita.nome_luogo(req.get("da", k["pos"])), SANGUE, 19)
 			b.pressed.connect(func(): _decidi({"a": "cerca"}))
 			richiesta_corpo.add_child(b)
 			richiesta_corpo.add_child(_riga("…oppure clicca un luogo vicino per [MUOVERTI].", 17))
+			if req.get("da", k["pos"]) == k["pos"] and k["id"] != "statue" and partita._puo_crollare():
+				var cr := _bottone("Fai crollare il corridoio", Color(0.3, 0.2, 0.1), 18)
+				cr.tooltip_text = "Una volta per partita: i Sopravvissuti non potranno più entrare in questo luogo"
+				cr.pressed.connect(func(): _decidi({"a": "crollo"}))
+				richiesta_corpo.add_child(cr)
 		"muovi_k":
 			plancia.mostra_scelta(req["vicini"], [], Color(1, 0.3, 0.25) if not req.get("furtivo", false) else Color(0.7, 0.4, 1))
 			sel_azione = "muovi_k"
@@ -1516,6 +1637,28 @@ func _mostra_richiesta() -> void:
 				var b := _bottone_piccolo("%s ↔ %s" % [ab[0], ab[1]])
 				b.pressed.connect(func(): _decidi({"porta": pt}))
 				richiesta_corpo.add_child(b)
+		"luogo":
+			plancia.mostra_scelta(req["luoghi"])
+			sel_azione = "luogo"
+			if req["luoghi"].size() <= 8:
+				for l in req["luoghi"]:
+					var bl := _bottone_piccolo(partita.nome_luogo(l))
+					bl.pressed.connect(func(): _decidi({"dest": l}))
+					richiesta_corpo.add_child(bl)
+			else:
+				richiesta_corpo.add_child(_riga("Clicca un luogo evidenziato sulla plancia.", 17))
+			if req.get("facoltativo", false):
+				var no := _bottone("Nessuno", Color(0.2, 0.12, 0.12), 18)
+				no.pressed.connect(func(): _decidi({"dest": ""}))
+				richiesta_corpo.add_child(no)
+		"scelta":
+			var opz: Array = req["opzioni"]
+			for n in opz.size():
+				var bs := _bottone(opz[n], SANGUE if n == 0 else Color(0.25, 0.08, 0.1), 17)
+				bs.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+				bs.custom_minimum_size = Vector2(260, 0)
+				bs.pressed.connect(func(): _decidi({"n": n}))
+				richiesta_corpo.add_child(bs)
 		"si_no":
 			var si := _bottone("Sì", SANGUE, 19)
 			si.pressed.connect(func(): _decidi({"si": true}))
@@ -1557,7 +1700,7 @@ func _su_luogo(l: String) -> void:
 				_decidi({"a": "usa", "i": sel_s, "ogg": sel_extra["_k"], "percorso": sel_extra[l]})
 		"whisky", "nota_rumore":
 			_decidi({"a": "usa", "i": sel_s, "ogg": sel_extra["_k"], "luogo": l})
-		"fuga":
+		"fuga", "luogo":
 			_decidi({"dest": l})
 		"azione_k":
 			_decidi({"a": "muovi", "dest": l})

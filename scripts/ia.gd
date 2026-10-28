@@ -113,6 +113,31 @@ func _su_evento(e: Dictionary) -> void:
 		"cerca_k":
 			for i in vv:
 				_escludi(i, [e["luogo"]])
+		"trappola_scattata":
+			_fissa(int(e["i"]), e["luogo"])
+		"distanza":
+			var i := int(e["i"])
+			var giusti := []
+			for l in p.mappa["luoghi"]:
+				if p.distanza(e["centro"], l) == int(e["d"]):
+					giusti.append(l)
+			_limita(i, giusti)
+		"stele":
+			for i in vv:
+				if e["colpiti"].has(i):
+					_limita(i, e["luoghi"])
+				else:
+					_escludi(i, e["luoghi"])
+		"zona_paura":
+			var zl := []
+			for l in p.mappa["luoghi"]:
+				if p.zona(l) == e["zona"]:
+					zl.append(l)
+			for i in vv:
+				if e["colpiti"].has(i):
+					_limita(i, zl)
+				else:
+					_escludi(i, zl)
 		"movimento_s":
 			pass
 
@@ -165,7 +190,14 @@ func decidi(req: Dictionary) -> Dictionary:
 func _valore_carta(c: String) -> float:
 	var v := {"inseguimento": 3.0, "percezione": 4.0, "follia": 3.0, "barricata": 1.5, "resta": 2.0, "motosega": 6.0, "furia": 8.0,
 		"urlo": 3.0, "svanire": 4.0, "scia": 4.0, "sfrecciare": 6.0, "risucchio": 9.0, "deduzione": 4.0, "avviso": 3.5,
-		"minaccia": 4.0, "appostamento": 3.0, "fioritura": 9.0}
+		"minaccia": 4.0, "appostamento": 3.0, "fioritura": 9.0,
+		"morso": 4.0, "ululato": 4.0, "caccia_sangue": 3.0, "territorio": 4.0, "udito": 9.0,
+		"istinto": 4.0, "ascia": 5.0, "fiato": 5.0, "tracce": 4.5, "riarmo": 7.0,
+		"esplosione": 5.0, "tocco": 4.0, "vapore": 4.0, "evocazione": 3.5, "prendeteli": 4.0, "orda": 3.0, "dominio": 7.0,
+		"stele": 3.5, "riposiziona": 2.5, "pattuglia": 4.0, "scatenate": 6.0, "esecuzione": 5.0, "accerchiamento": 9.0,
+		"rampicante": 2.0, "germoglio": 3.0, "telesintesi": 4.0, "strangolare": 5.0, "avvinghiare": 3.0, "frenesia": 9.0,
+		"strisciare": 3.0, "agguato": 4.0, "cunicolo": 3.5, "metamorfosi": 6.0, "infrarossi": 4.0, "adattamento": 4.5,
+		"stridio": 6.0, "acido": 8.0}
 	return v.get(c, 2.0)
 
 func _peggiori(n: int, esclusa := -1) -> Array:
@@ -191,6 +223,8 @@ func _decidi_k(req: Dictionary) -> Dictionary:
 		"veloce":
 			for idx in req["carte"]:
 				var c: String = mano[idx]
+				if _nuova_carta(c, "veloce", h, obj, vicino_caldo, p_qui):
+					return {"carta": idx}
 				match c:
 					"percezione":
 						if _incertezza() > 0.45:
@@ -224,6 +258,8 @@ func _decidi_k(req: Dictionary) -> Dictionary:
 		"principale":
 			for idx in req["carte"]:
 				var c: String = mano[idx]
+				if _nuova_carta(c, "speciale", h, obj, vicino_caldo, p_qui):
+					return {"carta": idx}
 				match c:
 					"furia":
 						if h.get(obj, 0.0) > 0.25 and p.distanza(qui, obj) <= 2:
@@ -243,15 +279,25 @@ func _decidi_k(req: Dictionary) -> Dictionary:
 							return {"carta": idx}
 			return {"carta": -1}
 		"azione_k":
-			if p_qui > 0.3:
+			var da: String = req.get("da", qui)
+			var o2 := _obiettivo_da(da)
+			if h.get(da, 0.0) > 0.3:
 				return {"a": "cerca"}
-			var passo := _passo_verso(qui, obj)
+			if da == qui and p._puo_crollare() and p.s["turno"] >= 3:
+				var vic := 0.0
+				for l in p.entro(qui, 1):
+					vic += h.get(l, 0.0)
+				if vic > 0.4 and rng.randf() < 0.5:
+					return {"a": "crollo"}
+			var passo := _passo_verso(da, o2)
 			if passo == "":
 				return {"a": "cerca"}
 			return {"a": "muovi", "dest": passo}
 		"lenta":
 			for idx in req["carte"]:
 				var c: String = mano[idx]
+				if _nuova_carta(c, "lenta", h, obj, vicino_caldo, p_qui):
+					return {"carta": idx}
 				if c in ["fioritura", "svanire", "minaccia"]:
 					return {"carta": idx}
 				if c == "appostamento" and p.distanza(qui, obj) >= 1 and rng.randf() < 0.5:
@@ -265,6 +311,12 @@ func _decidi_k(req: Dictionary) -> Dictionary:
 		"muovi_k":
 			if req["vicini"].is_empty():
 				return {"dest": ""}
+			if req.has("da") and req["da"] != qui:
+				var da2: String = req["da"]
+				var pv := _passo_verso(da2, _obiettivo_da(da2))
+				if pv != "" and req["vicini"].has(pv) and h.get(da2, 0.0) < 0.3:
+					return {"dest": pv}
+				return {"dest": req["vicini"][0] if req.get("obbligo", false) else ""}
 			var passo := _passo_verso(qui, obj)
 			if passo == "" or not req["vicini"].has(passo):
 				if req.get("obbligo", false):
@@ -318,6 +370,8 @@ func _decidi_k(req: Dictionary) -> Dictionary:
 		"si_no":
 			if "CERCARE" in req.get("titolo", ""):
 				return {"si": p_qui > 0.3}
+			if req.get("scopo", "") == "cima":
+				return {"si": true}
 			return {"si": mano.size() >= 4}
 		"bersaglio_paura":
 			var best: int = p.vivi()[0]
@@ -327,7 +381,222 @@ func _decidi_k(req: Dictionary) -> Dictionary:
 			return {"i": best}
 		"scarta_mano":
 			return {"carta": _peggiori(1)[0]}
+		"luogo":
+			return {"dest": _scegli_luogo_k(req, h, obj)}
+		"scelta":
+			return {"n": _scegli_opzione_k(req, h, obj)}
+		"sopravvissuto":
+			var cand: Array = req["candidati"]
+			var best: int = cand[0]
+			var bv := 2.0
+			for i in cand:
+				var m := _max_cred(i)
+				if m < bv:
+					bv = m
+					best = i
+			return {"i": best}
 	return {}
+
+## Il luogo caldo più vicino a un certo punto (per le Statue).
+func _obiettivo_da(da: String) -> String:
+	var h := calore()
+	var best := da
+	var bv := -1.0
+	for l in h:
+		var v: float = h[l] / (1.0 + 0.35 * p.distanza(da, l))
+		if v > bv:
+			bv = v
+			best = l
+	return best
+
+func _scegli_luogo_k(req: Dictionary, h: Dictionary, _obj: String) -> String:
+	var cand: Array = req.get("luoghi", [])
+	if cand.is_empty():
+		return ""
+	var k: Dictionary = p.s["killer"]
+	var scopo: String = req.get("scopo", "")
+	var best: String = cand[0]
+	var bv := -999.0
+	for l in cand:
+		var v := 0.0
+		var ld: Dictionary = p.mappa["luoghi"][l]
+		match scopo:
+			"trappola":
+				v = -p.distanza(l, p.mappa["partenza_s"]) * 0.6 + (2.0 if ld.get("chiave", false) or ld.get("radio", false) else 0.0) + h.get(l, 0.0) * 3.0
+				if p.distanza(l, p.mappa["partenza_s"]) == 0:
+					v -= 5.0
+			"statua":
+				v = (2.0 if ld.get("chiave", false) or ld.get("radio", false) else 0.0) - p.distanza(l, p.mappa["partenza_s"]) * 0.3
+				for st in p.s["statue"]:
+					if p.distanza(st["pos"], l) <= 1:
+						v -= 1.5
+			"zombi", "nucleo":
+				v = h.get(l, 0.0) * 3.0
+				for x in p.entro(l, 1):
+					v += h.get(x, 0.0)
+				if ld.get("chiave", false) or ld.get("radio", false):
+					v += 0.8
+			"percepisci":
+				v = h.get(l, 0.0) * (1.0 - h.get(l, 0.0))
+			"furtivo", "teletrasporto":
+				for x in p.entro(l, 1):
+					v += h.get(x, 0.0)
+				v += h.get(l, 0.0) * 2.0
+			"zombi_scelta":
+				for x in p.entro(l, 1):
+					v += h.get(x, 0.0)
+				v += p.zombi_in(l) * 0.1
+			"orda", "acido":
+				v = h.get(l, 0.0)
+				for x in p.entro(l, 1):
+					v += h.get(x, 0.0) * 0.3
+			"dominio":
+				v = -p.distanza(l, k["pos"])
+			"nucleo_scelta":
+				v = -h.get(l, 0.0)
+			"udito":
+				v = -p.distanza(k["pos"], l)
+			_:
+				v = h.get(l, 0.0)
+		v += rng.randf() * 0.01
+		if v > bv:
+			bv = v
+			best = l
+	return best
+
+func _scegli_opzione_k(req: Dictionary, h: Dictionary, _obj: String) -> int:
+	var k: Dictionary = p.s["killer"]
+	match req.get("scopo", ""):
+		"principale":
+			var best := 0
+			var bv := -1.0
+			for j in p.s["statue"].size():
+				var v := 0.0
+				for x in p.entro(p.s["statue"][j]["pos"], 2):
+					v += h.get(x, 0.0)
+				v += rng.randf() * 0.3
+				if v > bv:
+					bv = v
+					best = j
+			return best
+		"statua_azione":
+			var libere := []
+			for j in p.s["statue"].size():
+				if p.s["statue"][j]["gelo"] <= 0:
+					libere.append(j)
+			var best := 0
+			var bv := -1.0
+			for n in libere.size():
+				var pos: String = p.s["statue"][libere[n]]["pos"]
+				var v: float = h.get(pos, 0.0) * 3.0
+				for x in p.vicini(pos):
+					v += h.get(x, 0.0)
+				v += rng.randf() * 0.2
+				if v > bv:
+					bv = v
+					best = n
+			return best
+		"evoluzione":
+			var chiavi: Array = req.get("chiavi", [])
+			for e in ["mimetismo", "rettile", "sonar", "ghiandole"]:
+				if chiavi.has(e):
+					return chiavi.find(e)
+			return 0
+		"ultima":
+			return 1
+		"rimuovi":
+			var ids: Array = req.get("carte_id", [])
+			var peggio := 0
+			for n in ids.size():
+				if _valore_carta(ids[n]) < _valore_carta(ids[peggio]):
+					peggio = n
+			return peggio
+		"telesintesi":
+			var bv := 0.0
+			for l in p.s["nuclei"]:
+				bv = maxf(bv, h.get(l, 0.0))
+			return 0 if bv > h.get(k["pos"], 0.0) + 0.15 else 1
+		"cunicolo":
+			return 1 if rng.randf() < 0.5 else 0
+		"infrarossi":
+			var vic := 0.0
+			for l in p.entro(k["pos"], 1):
+				vic += h.get(l, 0.0)
+			return 1 if vic > 0.35 else 0
+	return 0
+
+## Decide se giocare una carta delle espansioni in una fase.
+func _nuova_carta(c: String, fase: String, h: Dictionary, obj: String, vicino_caldo: float, p_qui: float) -> bool:
+	var k: Dictionary = p.s["killer"]
+	var mano: Array = k["mano"]
+	var qui: String = k["pos"]
+	match c:
+		"ululato":
+			var v2 := 0.0
+			for l in p.entro(qui, 2):
+				v2 += h.get(l, 0.0)
+			return v2 > 0.6
+		"caccia_sangue":
+			return obj != qui and p.distanza(qui, obj) >= 2
+		"territorio":
+			if fase == "veloce":
+				return _incertezza() > 0.55 and rng.randf() < 0.5
+			return fase == "lenta"
+		"udito":
+			return not p.s["rumori"].is_empty()
+		"istinto":
+			return _incertezza() > 0.4 and mano.size() >= 3
+		"tracce":
+			return p_qui > 0.25 or _incertezza() > 0.5
+		"fiato":
+			return vicino_caldo > 0.4 or rng.randf() < 0.4
+		"riarmo":
+			return not p.s["trappole_scattate"].is_empty()
+		"esplosione":
+			for z in p.s["zombi"]:
+				var v := 0.0
+				for l in p.entro(z, 1):
+					v += h.get(l, 0.0)
+				if v > 0.6:
+					return true
+			return false
+		"prendeteli":
+			for z in p.s["zombi"]:
+				if h.get(z, 0.0) > 0.3:
+					return true
+			return false
+		"orda":
+			return p.s["zombi"].size() >= 2 and rng.randf() < 0.5
+		"dominio":
+			return _incertezza() < 0.6
+		"vapore":
+			return fase == "lenta" and rng.randf() < 0.6
+		"evocazione", "stele", "rampicante", "germoglio", "frenesia", "cunicolo":
+			return fase == "lenta"
+		"riposiziona":
+			return fase == "lenta" and mano.size() >= 4
+		"pattuglia":
+			return fase == "speciale" and rng.randf() < 0.6
+		"scatenate", "accerchiamento":
+			return fase == "speciale"
+		"telesintesi":
+			return fase == "lenta" and rng.randf() < 0.6
+		"avvinghiare":
+			return fase == "lenta" and p_qui > 0.25
+		"strisciare":
+			return obj != qui and p_qui < 0.35
+		"metamorfosi":
+			return fase == "speciale" and k["scarti"].size() >= 2
+		"infrarossi":
+			return _incertezza() > 0.4
+		"stridio":
+			return true
+		"acido":
+			var v: float = h.get(qui, 0.0)
+			for l in p.vicini(qui):
+				v = maxf(v, h.get(qui, 0.0) + h.get(l, 0.0))
+			return v > 0.35
+	return false
 
 func _max_cred(i: int) -> float:
 	var m := 0.0
@@ -350,16 +619,31 @@ func _kpos() -> String:
 	return p.killer_visto()
 
 func pericolo(l: String) -> float:
-	var kp := _kpos()
-	var d := p.distanza(l, kp)
+	var d := p.distanza_killer(l)
 	if p.s["killer"]["furtivo"]:
 		d = maxi(0, d - 1)
+	var extra := 0.0
+	if p.s["killer"]["id"] == "statue":
+		for st in p.s["statue"]:
+			if st["pos"] == l and st["gelo"] > 0 and d == 0:
+				extra -= 0.5
+	extra += 0.2 * p.zombi_in(l)
+	if p.s["trappole_k"].has(l):
+		extra += 0.6
+	var base := 0.05
 	match d:
-		0: return 1.0
-		1: return 0.75
-		2: return 0.4
-		3: return 0.15
-	return 0.05
+		0: base = 1.0
+		1: base = 0.75
+		2: base = 0.4
+		3: base = 0.15
+	return maxf(0.0, base + extra)
+
+## Una trappola lungo il percorso (prima della meta) ferma il movimento: meglio evitarla.
+func _penalita(perc: Array) -> float:
+	for n in perc.size():
+		if p.s["trappole_k"].has(perc[n]):
+			return 3.0 if n < perc.size() - 1 else 1.0
+	return 0.0
 
 func _obiettivo_s(i: int) -> String:
 	var pp: Dictionary = p.s["sopr"][i]
@@ -368,7 +652,7 @@ func _obiettivo_s(i: int) -> String:
 		# nascondersi il più lontano possibile
 		var best: String = pp["pos"]
 		for l in luoghi:
-			if p.distanza(l, _kpos()) > p.distanza(best, _kpos()):
+			if p.distanza_killer(l) > p.distanza_killer(best):
 				best = l
 		return best
 	if p.s["chiavi"] >= 5:
@@ -384,7 +668,8 @@ func _obiettivo_s(i: int) -> String:
 	var best := ""
 	var bv := 999.0
 	for l in luoghi:
-		var cerca_qui: bool = luoghi[l].get("chiave", false) or (pp["id"] == "caleb" and luoghi[l].get("spirale", false))
+		var cerca_qui: bool = luoghi[l].get("chiave", false) or (pp["id"] == "caleb" and luoghi[l].get("spirale", false)) \
+			or (luoghi[l].get("reliquie", false) and (not p.s["reliquie_aperte"] or not p.s["reliquie"].is_empty()))
 		if cerca_qui:
 			var v: float = p.distanza(pp["pos"], l) + 6.0 * pericolo(l)
 			if v < bv:
@@ -494,16 +779,23 @@ func _decidi_s(req: Dictionary) -> Dictionary:
 			var pp: Dictionary = p.s["sopr"][int(req["i"])]
 			if pp["id"] == "william" and int(best["bonus"]) <= 1:
 				return {"ogg": -1}
-			return {"ogg": best["ogg"], "munizioni": best.get("munizioni", false)}
+			return {"ogg": best["ogg"], "ogg2": best.get("ogg2", -1), "munizioni": best.get("munizioni", false)}
 		"fuga":
 			var best := ""
-			var bd := p.distanza(p.s["sopr"][int(req["i"])]["pos"], _kpos())
+			var bd := p.distanza_killer(p.s["sopr"][int(req["i"])]["pos"])
 			for l in req["luoghi"]:
-				var d := p.distanza(l, _kpos())
+				var d := p.distanza_killer(l)
 				if d > bd:
 					bd = d
 					best = l
 			return {"dest": best}
+		"sopravvissuto":
+			var cand: Array = req["candidati"]
+			var best: int = cand[0]
+			for i in cand:
+				if p.s["sopr"][i]["oggetti"].size() < p.s["sopr"][best]["oggetti"].size():
+					best = i
+			return {"i": best}
 		"nota_george":
 			var i := int(req["i"])
 			if not p.ha_oggetto(i, "nota_difesa"):
@@ -552,6 +844,12 @@ func _azione_s() -> Dictionary:
 					return {"a": "usa", "i": i, "ogg": k, "percorso": perc}
 		if poss.has("meccanica") and p.s["riparazione"] < Dati.RIPARAZIONE_MAX:
 			return {"a": "meccanica", "i": i}
+		if poss.has("forziere") and danger < 1.0:
+			return {"a": "forziere", "i": i}
+		if poss.has("usa"):
+			for k in poss["usa"]:
+				if pp["oggetti"][k] == "specchio" and danger >= 0.75:
+					return {"a": "usa", "i": i, "ogg": k}
 		if poss.has("valigia") and danger < 0.75:
 			return {"a": "valigia", "i": i}
 		if poss.has("leva") and not p.s["killer"]["furtivo"]:
@@ -571,6 +869,16 @@ func _azione_s() -> Dictionary:
 		if pp["agito"]:
 			continue
 		# azione principale
+		if poss.has("congela") and danger >= 0.75:
+			return {"a": "congela", "i": i}
+		if poss.has("usa"):
+			for k in poss["usa"]:
+				if pp["oggetti"][k] == "balestra" and danger < 1.0:
+					return {"a": "usa", "i": i, "ogg": k}
+				if pp["oggetti"][k] == "sfera" and danger < 0.75:
+					return {"a": "usa", "i": i, "ogg": k}
+		if poss.has("crollo") and danger >= 0.4 and danger < 1.0 and rng.randf() < 0.35:
+			return {"a": "crollo", "i": i}
 		if pp["ferite"] > 0 and poss.has("usa"):
 			for k in poss["usa"]:
 				if pp["oggetti"][k] in ["erbe", "kit_medico"] and danger < 0.75:
@@ -589,6 +897,12 @@ func _azione_s() -> Dictionary:
 			return {"a": "ripara", "i": i}
 		if poss.has("cerca") and danger < 0.75 and ruoli.get(i, "") != "radio":
 			return {"a": "cerca", "i": i}
+		if poss.has("apri_reliquie") and danger < 0.75:
+			return {"a": "apri_reliquie", "i": i}
+		if poss.has("cerca_reliquie") and danger < 0.75:
+			return {"a": "cerca_reliquie", "i": i}
+		if poss.has("nucleo") and danger < 0.75:
+			return {"a": "nucleo", "i": i}
 		if poss.has("cerca") and danger < 0.4 and p.s["riparazione"] >= Dati.RIPARAZIONE_MAX:
 			return {"a": "cerca", "i": i}
 		if poss.has("mente"):
@@ -615,7 +929,7 @@ func _percorso_sicuro(i: int, obj: String, n: int) -> Array:
 	var pp: Dictionary = p.s["sopr"][i]
 	var bv: float = p.distanza(pp["pos"], obj) + 5.0 * pericolo(pp["pos"])
 	for l in ragg:
-		var v: float = p.distanza(l, obj) + 5.0 * pericolo(l) + rng.randf() * 0.1
+		var v: float = p.distanza(l, obj) + 5.0 * pericolo(l) + _penalita(ragg[l]) * 2.0 + rng.randf() * 0.1
 		if v < bv:
 			bv = v
 			best = ragg[l]
@@ -628,7 +942,7 @@ func _miglior_rifugio(i: int, n: int) -> Array:
 	for l in ragg:
 		if ragg[l].size() > n:
 			continue
-		var v := pericolo(l) + rng.randf() * 0.05
+		var v := pericolo(l) + _penalita(ragg[l]) * 0.5 + rng.randf() * 0.05
 		if v < bv:
 			bv = v
 			best = ragg[l]

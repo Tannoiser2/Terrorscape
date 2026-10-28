@@ -110,6 +110,14 @@ func imposta(partita: Partita, quale_lato: String) -> void:
 	fantasmi.clear()
 	var kd: Dictionary = Dati.KILLER[p.s["killer"]["id"]]
 	sagome["k"] = _sagoma(kd["mini"], Color(0.75, 0.05, 0.05), 1.9)
+	if p.s["killer"]["id"] == "statue":
+		var imm := ["statua_r", "statua_b", "statua_g", "statua_y"]
+		var col := [Color(0.75, 0.1, 0.1), Color(0.15, 0.3, 0.8), Color(0.15, 0.6, 0.2), Color(0.85, 0.7, 0.1)]
+		for j in 4:
+			sagome["t%d" % j] = _sagoma("res://assets/mini/%s.webp" % imm[j], col[j], 1.7)
+	if p.s["killer"]["id"] == "regina":
+		for j in 6:
+			sagome["z%d" % j] = _sagoma("res://assets/mini/zombi.webp", Color(0.3, 0.55, 0.15), 1.05)
 	for i in p.s["sopr"].size():
 		var sd: Dictionary = Dati.SOPRAVVISSUTI[p.s["sopr"][i]["id"]]
 		sagome["s%d" % i] = _sagoma("res://assets/mini/%s.webp" % p.s["sopr"][i]["id"], sd["colore"], 1.45)
@@ -329,6 +337,22 @@ func aggiorna(subito := false) -> void:
 		spr.rotation_degrees.z = 0.0 if sp["vivo"] else 90.0
 		spr.modulate = Color(1, 1, 1, spr.modulate.a) if sp["vivo"] else Color(0.5, 0.2, 0.2, 1)
 	sagome["k"].visible = k_vis
+	# Statue e zombi: li vedono tutti
+	for j in p.s["statue"].size():
+		var key := "t%d" % j
+		if sagome.has(key):
+			var l: String = p.s["statue"][j]["pos"]
+			gruppi[l] = gruppi.get(l, []) + [key]
+			var spr_t: Sprite3D = sagome[key].get_node("img")
+			spr_t.modulate = Color(0.6, 0.8, 1.0) if p.s["statue"][j]["gelo"] > 0 else Color(1, 1, 1)
+	for j in 6:
+		var key := "z%d" % j
+		if not sagome.has(key):
+			continue
+		sagome[key].visible = j < p.s["zombi"].size()
+		if j < p.s["zombi"].size():
+			var l: String = p.s["zombi"][j]
+			gruppi[l] = gruppi.get(l, []) + [key]
 	for l in gruppi:
 		var lst: Array = gruppi[l]
 		var centro := pos_luogo(l)
@@ -348,6 +372,9 @@ func aggiorna(subito := false) -> void:
 	if k_vis:
 		luce_k.visible = true
 		luce_k.position = pos_luogo(kpos) + Vector3(0, 1.6, 0)
+	elif p.s["killer"]["id"] == "statue" and lato != "S":
+		luce_k.visible = true
+		luce_k.position = sagome["t%d" % p.s["killer"]["principale"]].position + Vector3(0, 1.6, 0)
 	else:
 		luce_k.visible = false
 	_segnalini()
@@ -441,6 +468,42 @@ func _segnalini() -> void:
 			_gettone(pos_luogo(l) + Vector3(-0.7, 0.05, 0.55), Color(0.75, 0.72, 0.65), "☠", 0.3)
 		if ld.get("valigia", false):
 			_gettone(pos_luogo(l) + Vector3(-0.7, 0.05, 0.55), Color(0.55, 0.32, 0.12) if p.s.get("valigia_su", false) else Color(0.25, 0.2, 0.18), "V", 0.3)
+	# espansioni: trappole della Cacciatrice, nuclei, forzieri, crolli, reliquie, gelo, Statua principale
+	for l in p.s["trappole_k"]:
+		var img := "res://assets/gettoni/trappola_dorso.webp"
+		if lato != "S":
+			img = Dati.TRAPPOLE[p.s["trappole_k"][l]]["img"]
+		_piatto(pos_luogo(l) + Vector3(0.0, 0.03, 0.72), img, 0.55)
+	var conta_n := {}
+	for l in p.s["nuclei"]:
+		var n: int = conta_n.get(l, 0)
+		conta_n[l] = n + 1
+		_ritto(pos_luogo(l) + Vector3(-0.75 + 0.3 * n, 0.0, -0.55), "res://assets/mini/nucleo.webp", 0.6)
+	for l in p.s["forzieri"]:
+		_piatto(pos_luogo(l) + Vector3(-0.72, 0.03, 0.6), "res://assets/gettoni/forziere.webp", 0.5)
+	for cr in [p.s["crollo_k"], p.s["crollo_s"]]:
+		if cr != "":
+			_gettone(pos_luogo(cr) + Vector3(0, 0.05, 0.3), Color(0.4, 0.3, 0.2), "CROLLO", 0.4)
+	for l in p.mappa["luoghi"]:
+		if p.mappa["luoghi"][l].get("reliquie", false):
+			_piatto(pos_luogo(l) + Vector3(0.75, 0.03, 0.55), "res://assets/gettoni/%s.webp" % ("reliquie_aperte" if p.s["reliquie_aperte"] else "reliquie_chiuse"), 0.5)
+	for j in p.s["statue"].size():
+		var key := "t%d" % j
+		if not sagome.has(key):
+			continue
+		if p.s["statue"][j]["gelo"] > 0:
+			_piatto(sagome[key].position + Vector3(0, 0.12, 0.35), "res://assets/gettoni/gelo.webp", 0.7)
+		if lato != "S" and j == p.s["killer"]["principale"]:
+			var lb := Label3D.new()
+			lb.text = "PRINCIPALE"
+			lb.font_size = 40
+			lb.pixel_size = 0.006
+			lb.outline_size = 10
+			lb.modulate = Color(1, 0.85, 0.3)
+			lb.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			lb.no_depth_test = true
+			lb.position = sagome[key].position + Vector3(0, 2.05, 0)
+			segnalini.add_child(lb)
 	# rumori (il Killer li vede a fine turno dei Sopravvissuti; i Sopravvissuti li vedono subito)
 	var rum: Array = p.s["rumori"] if (lato == "S" or p.s["fase"] == "K") else p.s["rumori_prec"]
 	if lato == "K" and p.s["fase"] == "S":
@@ -470,6 +533,34 @@ func _segnalini() -> void:
 				lb.no_depth_test = true
 				lb.position = sagome["s%d" % i].position + Vector3(0, 2.0, 0)
 				segnalini.add_child(lb)
+
+## Un gettone illustrato appoggiato sul tabellone.
+func _piatto(pos: Vector3, img: String, larghezza: float) -> void:
+	var t := _tex(img)
+	if t == null:
+		return
+	var spr := Sprite3D.new()
+	spr.texture = t
+	spr.pixel_size = larghezza / float(maxi(t.get_width(), t.get_height()))
+	spr.rotation_degrees.x = -90
+	spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+	spr.shaded = false
+	spr.position = pos
+	segnalini.add_child(spr)
+
+## Una piccola figura in piedi (i nuclei dello Strangolatore).
+func _ritto(pos: Vector3, img: String, altezza: float) -> void:
+	var t := _tex(img)
+	if t == null:
+		return
+	var spr := Sprite3D.new()
+	spr.texture = t
+	spr.pixel_size = altezza / float(t.get_height())
+	spr.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+	spr.shaded = false
+	spr.position = pos + Vector3(0, altezza * 0.5, 0)
+	segnalini.add_child(spr)
 
 ## Fa brillare per qualche istante alcuni luoghi (percezioni, rumori, paura).
 func lampeggia(luoghi: Array, colore: Color, durata := 2.4) -> void:
