@@ -1,0 +1,12 @@
+{
+  "titolo": "Terrorscape",
+  "sottotitolo": "Sopravvivi alla notte",
+  "descrizione": "Horror di sopravvivenza a squadre: tre Sopravvissuti cercano chiavi e radio per fuggire dalla Villa, il Killer li bracca senza vederli. Contro il computer (in entrambi i ruoli) o online.",
+  "online": true,
+  "sezione": "conversione",
+  "ordine": 30,
+  "generi": [
+    "Horror",
+    "Deduzione"
+  ]
+}

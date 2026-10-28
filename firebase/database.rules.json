@@ -1,0 +1,45 @@
+{
+  "rules": {
+    "terrorscape": {
+      "rooms": {
+        "$code": {
+          ".read": "auth != null",
+          ".write": "auth != null && data.child('host').val() === auth.uid && !newData.exists()",
+          ".validate": "$code.length === 4",
+          "host": {
+            ".write": "auth != null && !data.exists() && newData.val() === auth.uid"
+          },
+          "created": {
+            ".write": "auth != null && !data.exists()"
+          },
+          "lato_host": {
+            ".write": "auth != null && newData.parent().child('host').val() === auth.uid",
+            ".validate": "newData.isString() && newData.val().length <= 2"
+          },
+          "status": {
+            ".write": "auth != null && newData.parent().child('host').val() === auth.uid",
+            ".validate": "newData.isString() && newData.val().length <= 12"
+          },
+          "game": {
+            ".write": "auth != null && newData.parent().child('host').val() === auth.uid"
+          },
+          "seats": {
+            "$i": {
+              ".write": "auth != null && ((!data.exists() && newData.child('uid').val() === auth.uid) || data.child('uid').val() === auth.uid || root.child('terrorscape/rooms/' + $code + '/host').val() === auth.uid || (newData.child('uid').val() === auth.uid && data.child('name').val() === newData.child('name').val()))",
+              ".validate": "newData.hasChildren(['uid', 'name']) && newData.child('name').isString() && newData.child('name').val().length <= 24"
+            }
+          },
+          "log": {
+            "$n": {
+              ".write": "auth != null && !data.exists() && (root.child('terrorscape/rooms/' + $code + '/seats/0/uid').val() === auth.uid || root.child('terrorscape/rooms/' + $code + '/seats/1/uid').val() === auth.uid)",
+              ".validate": "newData.hasChildren(['d']) && newData.child('d').isString() && newData.child('d').val().length <= 2000"
+            }
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      }
+    }
+  }
+}
